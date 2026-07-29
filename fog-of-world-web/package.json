@@ -1,0 +1,24 @@
+{
+  "name": "fog-of-world-web",
+  "version": "1.0.0",
+  "description": "Fog of World WebApp - Enthuelle die Weltkarte durch Reisen",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "leaflet": "^1.9.4",
+    "@turf/turf": "^6.5.0",
+    "gpx-parse": "^0.10.2",
+    "@mapbox/togeojson": "^0.16.0",
+    "idb": "^7.1.1",
+    "leaflet-draw": "^1.0.4"
+  },
+  "devDependencies": {
+    "vite": "^4.5.0",
+    "vite-plugin-pwa": "^0.17.0",
+    "workbox-window": "^7.0.0"
+  }
+}

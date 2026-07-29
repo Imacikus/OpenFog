@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Fog of World</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      height: 100vh;
+      width: 100vw;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    #header {
+      background: #2c3e50;
+      color: white;
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    #header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+    
+    #header-buttons {
+      display: flex;
+      gap: 10px;
+    }
+    
+    #header-buttons button {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 4px;
+      background: #3498db;
+      color: white;
+      cursor: pointer;
+      font-size: 0.9rem;
+    }
+    
+    #header-buttons button:hover {
+      background: #2980b9;
+    }
+    
+    #map-container {
+      flex: 1;
+      position: relative;
+    }
+    
+    #map {
+      height: 100%;
+      width: 100%;
+    }
+    
+    #sidebar {
+      position: absolute;
+      left: 20px;
+      top: 20px;
+      width: 300px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      padding: 15px;
+      z-index: 1000;
+      max-height: 80vh;
+      overflow-y: auto;
+    }
+    
+    #sidebar h2 {
+      margin-bottom: 15px;
+      color: #2c3e50;
+      font-size: 1.2rem;
+    }
+    
+    .panel {
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 1px solid #eee;
+    }
+    
+    .panel:last-child {
+      border-bottom: none;
+      margin-bottom: 0;
+    }
+    
+    .stat {
+      display: flex;
+      justify-content: space-between;
+      margin: 5px 0;
+      font-size: 0.9rem;
+    }
+    
+    .stat span:first-child {
+      color: #7f8c8d;
+    }
+    
+    .stat span:last-child {
+      font-weight: 600;
+      color: #2c3e50;
+    }
+    
+    progress {
+      width: 100%;
+      height: 8px;
+      border-radius: 4px;
+      margin-top: 5px;
+    }
+    
+    progress::-webkit-progress-bar {
+      background-color: #ecf0f1;
+      border-radius: 4px;
+    }
+    
+    progress::-webkit-progress-value {
+      background-color: #3498db;
+      border-radius: 4px;
+    }
+    
+    .achievement {
+      display: flex;
+      align-items: center;
+      padding: 10px;
+      margin: 5px 0;
+      background: #f8f9fa;
+      border-radius: 6px;
+      font-size: 0.9rem;
+    }
+    
+    .achievement.unlocked {
+      background: #e8f4fc;
+      border-left: 3px solid #3498db;
+    }
+    
+    .achievement.locked {
+      opacity: 0.6;
+    }
+    
+    .achievement-icon {
+      font-size: 1.5rem;
+      margin-right: 10px;
+      width: 30px;
+      text-align: center;
+    }
+    
+    .achievement-content h3 {
+      margin-bottom: 3px;
+      color: #2c3e50;
+    }
+    
+    .achievement-content p {
+      color: #7f8c8d;
+      font-size: 0.8rem;
+    }
+    
+    #importModal {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.5);
+      z-index: 2000;
+      justify-content: center;
+      align-items: center;
+    }
+    
+    #importModal.show {
+      display: flex;
+    }
+    
+    #importModal .modal-content {
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      width: 400px;
+      max-width: 90%;
+      text-align: center;
+    }
+    
+    #importModal h2 {
+      margin-bottom: 15px;
+      color: #2c3e50;
+    }
+    
+    #importModal input[type="file"] {
+      display: none;
+    }
+    
+    #importModal .file-input-label {
+      display: inline-block;
+      padding: 10px 15px;
+      background: #3498db;
+      color: white;
+      border-radius: 4px;
+      cursor: pointer;
+      margin-bottom: 15px;
+    }
+    
+    #importModal .file-input-label:hover {
+      background: #2980b9;
+    }
+    
+    #importModal button {
+      padding: 8px 15px;
+      border: none;
+      border-radius: 4px;
+      background: #95a5a6;
+      color: white;
+      cursor: pointer;
+    }
+    
+    #importModal button:hover {
+      background: #7f8c8d;
+    }
+    
+    #trackingControls {
+      position: absolute;
+      bottom: 20px;
+      right: 20px;
+      z-index: 1000;
+      display: flex;
+      gap: 10px;
+    }
+    
+    #trackingControls button {
+      padding: 10px 15px;
+      border: none;
+      border-radius: 4px;
+      background: #27ae60;
+      color: white;
+      cursor: pointer;
+      font-size: 0.9rem;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+    }
+    
+    #trackingControls button.stop {
+      background: #e74c3c;
+    }
+    
+    #trackingControls button:hover {
+      opacity: 0.9;
+    }
+    
+    #trackingControls button:disabled {
+      background: #95a5a6;
+      cursor: not-allowed;
+    }
+    
+    .hidden {
+      display: none !important;
+    }
+    
+    @media (max-width: 768px) {
+      #sidebar {
+        width: 90%;
+        left: 5%;
+        top: 10px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1><i class="fas fa-globe"></i> Fog of World</h1>
+    <div id="header-buttons">
+      <button onclick="toggleSidebar()"><i class="fas fa-chart-bar"></i> Statistiken</button>
+      <button onclick="showImportModal()"><i class="fas fa-file-import"></i> Importieren</button>
+    </div>
+  </div>
+  
+  <div id="map-container">
+    <div id="map"></div>
+    
+    <div id="sidebar" class="hidden">
+      <h2>Statistiken</h2>
+      
+      <div class="panel">
+        <h3><i class="fas fa-map-marked-alt"></i> Enthüllte Fläche</h3>
+        <div class="stat">
+          <span>Fläche:</span>
+          <span id="revealedArea">0 km²</span>
+        </div>
+        <div class="stat">
+          <span>Prozent der Welt:</span>
+          <span id="revealedPercent">0%</span>
+        </div>
+      </div>
+      
+      <div class="panel">
+        <h3><i class="fas fa-level-up-alt"></i> Level</h3>
+        <div class="stat">
+          <span>Level:</span>
+          <span id="currentLevel">1</span>
+        </div>
+        <div class="stat">
+          <span>XP:</span>
+          <span id="currentXP">0</span>
+        </div>
+        <progress id="xpProgress" value="0" max="500"></progress>
+        <div class="stat">
+          <span>Nächstes Level bei:</span>
+          <span id="nextLevelXP">500 XP</span>
+        </div>
+      </div>
+      
+      <div class="panel">
+        <h3><i class="fas fa-trophy"></i> Erfolge</h3>
+        <div id="achievementsList">
+          <!-- Wird dynamisch gefüllt -->
+        </div>
+      </div>
+    </div>
+    
+    <div id="trackingControls">
+      <button onclick="startTracking()" id="startTrackingBtn"><i class="fas fa-map-marker-alt"></i> Tracking starten</button>
+      <button onclick="stopTracking()" id="stopTrackingBtn" class="stop hidden"><i class="fas fa-stop"></i> Tracking stoppen</button>
+    </div>
+  </div>
+  
+  <div id="importModal">
+    <div class="modal-content">
+      <h2><i class="fas fa-file-import"></i> Track importieren</h2>
+      <p>Wähle eine GPX- oder KML-Datei aus:</p>
+      <label for="fileInput" class="file-input-label"><i class="fas fa-folder-open"></i> Datei auswählen</label>
+      <input type="file" id="fileInput" accept=".gpx,.kml" onchange="handleFileImport(event)">
+      <br>
+      <button onclick="closeImportModal()">Abbrechen</button>
+    </div>
+  </div>
+  
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
