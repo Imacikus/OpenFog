@@ -14,11 +14,12 @@ Run from `fog-of-world-web/`:
 | `npx cap sync` | Copy web build to Android project |
 | `cd android && ./gradlew assembleDebug` | Build debug APK |
 
-APK full pipeline:
+APK full pipeline (from `fog-of-world-web/`):
 ```bash
 npm run build && npx cap sync && cd android && ./gradlew assembleDebug && adb install -r app/build/outputs/apk/debug/app-debug.apk
 cp android/app/build/outputs/apk/debug/app-debug.apk ../../openfog/OpenFog.apk
 ```
+F-Droid builds from `openfog/android/` — gradle only, no `npx cap sync` during CI.
 
 ## Architecture
 
@@ -52,19 +53,20 @@ cp android/app/build/outputs/apk/debug/app-debug.apk ../../openfog/OpenFog.apk
 ## Android / Capacitor
 
 - **Two Android projects**:
-  - `fog-of-world-web/android/` – **the real build target** (Capacitor 8.x). This is what `npx cap sync` writes to and `./gradlew assembleDebug` builds from.
-  - `openfog/` – standalone copy with Capactor 5.x (`@capacitor/android: ^5.7.8`). The APK is copied here after build (`openfog/OpenFog.apk`) as a distributable.
+  - `fog-of-world-web/android/` – **dev build target** (Capacitor 8.x). `npx cap sync` writes here, `./gradlew assembleDebug` builds from here.
+  - `openfog/android/` – **F-Droid build target** (Capacitor 5.x, `@capacitor/android: ^5.7.8`). Gradle-only build, no `npx cap sync` during build. Web assets must be pre-synced and committed.
 - **Version mismatch**: `fog-of-world-web/package.json` has `@capacitor/cli: ^6.2.1` but `@capacitor/core` + `@capacitor/android: ^8.4.2`. The CLI pin to 6.x is intentional.
-- **appId discrepancy**: `fog-of-world-web/capacitor.config.json` uses `com.openfog.online` (F-Droid compatible). `openfog/capacitor.config.json` uses `com.openfog`.
 - `openfog/capacitor.config.json` `webDir` points to `../fog-of-world-web/dist`.
-- `minSdkVersion = 23` (required by `@capacitor/geolocation`), in `android/variables.gradle`.
+- `minSdkVersion = 23` (required by `@capacitor/geolocation`), in both `android/variables.gradle` files.
 
 ## F-Droid
 
-- F-Droid metadata already exists at `fog-of-world-web/metadata/com.openfog.online.yml`.
-- No CDN dependencies, no Google Play Services, no Firebase.
+- F-Droid metadata at `fog-of-world-web/metadata/com.openfog.online.yml`:
+  - Build: `commit: ac37c2b`, `subdir: openfog/android`, gradle build.
+- Fastlane store metadata at `fog-of-world-web/fastlane/metadata/android/en-US/` (title, short_description, full_description).
+- No CDN dependencies, no Google Play Services, no Firebase (`openfog/android/build.gradle` has no `google-services` classpath).
 - All deps FLOSS (MIT / Apache 2.0).
-- `applicationId = com.openfog.online` (matches namespace).
+- `applicationId = com.openfog.online` (all projects).
 
 ## Gotchas
 
