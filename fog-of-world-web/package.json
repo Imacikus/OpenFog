@@ -9,11 +9,12 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "leaflet": "^1.9.4",
+    "@mapbox/togeojson": "^0.16.0",
     "@turf/turf": "^6.5.0",
     "gpx-parse": "^0.10.2",
-    "@mapbox/togeojson": "^0.16.0",
     "idb": "^7.1.1",
+    "jszip": "^3.10.1",
+    "leaflet": "^1.9.4",
     "leaflet-draw": "^1.0.4"
   },
   "devDependencies": {

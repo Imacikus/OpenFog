@@ -1,198 +1,96 @@
 # AGENTS.md
 
-## Fog of World WebApp - Agent Guidelines
+Single-page browser app (vanilla JS, no framework). Leaflet map, Turf.js geospatial, IndexedDB via `idb`. All source in one file + inline CSS. No tests, no linter, no formatter.
 
-This document provides guidelines for AI agents, contributors, and developers working on the **Fog of World WebApp** project.
+## Commands (run from `fog-of-world-web/`)
 
----
+| Command | Action |
+|---------|--------|
+| `npm install` | Install dependencies |
+| `npm run dev` | Dev server at http://localhost:3000 |
+| `npm run build` | Production build to `dist/` |
 
-## 📌 Project Overview
+No other scripts exist. Verify changes manually via `npm run dev`.
 
-**Fog of World WebApp** is a real-life game where users reveal a fog-covered world map by exploring the real world. The app tracks user movements via GPS or imported tracks (GPX/KML) and gradually uncovers the map, providing statistics, achievements, and a leveling system.
+## Key files
 
-### Key Features
-- **Fog Reveal**: Vector-based fog removal with a 15m radius around tracks or GPS points.
-- **GPX/KML Import**: Users can import existing tracks to reveal fog along those paths.
-- **Live GPS Tracking**: Real-time fog reveal using the browser's Geolocation API.
-- **Achievement System**: 8 default achievements for milestones like distance traveled, area revealed, or level reached.
-- **Level System**: XP-based progression (10 XP per km² revealed, level up every 500 XP).
-- **Statistics**: Track revealed area (km²), percentage of the world revealed, and total distance.
-- **PWA Support**: Offline-capable Progressive Web App with service workers.
-- **Open-Source Only**: Uses OpenStreetMap, Leaflet.js, Turf.js, and Font Awesome.
+- `fog-of-world-web/index.html` — entry point + inline CSS + HTML (385 lines)
+- `fog-of-world-web/src/main.js` — all app logic (1016 lines)
+- `fog-of-world-web/vite.config.js` — Vite + PWA plugin
 
----
+## UI Architecture
 
-## 🛠️ Development Guidelines
+### Design System (Dark Theme, Map-First)
 
-### Code Style
-- **JavaScript**: Use ES6+ syntax (e.g., `const`, `async/await`, arrow functions).
-- **Indentation**: 2 spaces (no tabs).
-- **Naming**: Use `camelCase` for variables/functions and `PascalCase` for classes.
-- **Comments**: Add comments for non-obvious logic or complex algorithms (e.g., fog reveal calculations).
+- **Theme**: Dark (`#1a1a2e` bg, `#6c63ff` accent). No light mode toggle.
+- **Glassmorphism**: Panels use `backdrop-filter: blur(16px)` + `rgba(22,33,62,0.78)` background via `.glass` class.
+- **Map**: Fixed full-viewport (`position: fixed; inset: 0`), z-index 0. All UI floats above.
+- **Responsive**: Single breakpoint at 768px.
+  - **Mobile (< 768px)**: Glass header (48px), Bottom Sheet for stats, FAB for tracking.
+  - **Desktop (≥ 768px)**: Glass header with more buttons, collapsed sidebar (52px → 260px on hover/click), FAB.
 
-### File Structure
-```
-fog-of-world-web/
-├── index.html              # Main HTML file (entry point)
-├── package.json            # Dependencies and scripts
-├── vite.config.js          # Vite + PWA configuration
-├── .gitignore              # Ignored files (node_modules, dist)
-├── public/
-│   └── manifest.json       # PWA manifest
-└── src/
-    └── main.js             # Core app logic
-```
+### Layout Components
 
-### Dependencies
-- **Allowed**: Open-source libraries only (e.g., Leaflet, Turf.js, Font Awesome).
-- **Avoid**: Proprietary APIs or closed-source tools unless absolutely necessary.
-- **Add New Dependencies**: Justify the need in a PR description.
+| Component | Mobile | Desktop |
+|-----------|--------|---------|
+| **Header** (`#header`) | Fixed top, 48px. App name + Locate + Stats toggle | Same + Import + DB buttons |
+| **FAB** (`#fabTrack`) | Bottom-right, 88px from bottom (above bottom sheet). Toggles GPS tracking | Bottom-right, 24px |
+| **Bottom Sheet** (`#bottomSheet`) | Fixed bottom, 68px preview always visible. Tap to expand (70vh max). Contains all stats + achievements | Hidden (`display: none`) |
+| **Desktop Sidebar** (`#sidebarDesktop`) | Hidden | Fixed left-center, collapsed (52px, icons only). Click to expand (260px) with full stats |
+| **Modals** (`#importModal`, `#dbModal`) | Fullscreen overlay with glass content, `backdrop-filter: blur(4px)` | Centered dialog, max 380px |
 
----
+### Animations (all CSS, ~90 lines)
 
-## 🤖 Agent-Specific Instructions
+| Animation | Trigger | Effect |
+|-----------|---------|--------|
+| `fadeSlideDown` | Page load (0.1s delay) | Header slides in from top |
+| `popIn` | Page load (0.2s delay) | FAB scales in from 0.5 → 1 |
+| `sheetSlideUp` | Page load (0.3s delay) | Bottom sheet slides up from lower position |
+| `pulse-ring` | Tracking active | FAB gets pulsing red glow (`@keyframes pulse-ring`) |
+| Bottom sheet expand | Tap preview | `transform: translateY(0)` with `0.4s cubic-bezier(0.32, 0.72, 0, 1)` |
+| Bottom sheet collapse | Tap preview | Reverse animation |
+| Achievement cards | Sheet expands | Staggered fade-in (8 items, 0.05s delay each) |
+| Sidebar expand | Click (desktop) | Width 52px → 260px, content fades in |
+| Modals | Open/close | Overlay fades in, content scales from 0.92 + translateY(16px) |
+| Header buttons | Hover/active | Background tint + translateY(-1px) / scale(0.92) |
 
-### For AI Agents (e.g., Vibe Code)
-1. **Scope**: Always confirm the scope of changes before implementing. Ask clarifying questions if the request is ambiguous.
-2. **Testing**: 
-   - Test changes locally using `npm run dev`.
-   - Verify GPX/KML imports, live tracking, and fog reveal functionality.
-3. **Commits**: 
-   - Use descriptive commit messages (e.g., "Add GPX parser for track imports").
-   - Reference issues or features in commit messages (e.g., "Closes #123").
-4. **Pull Requests**: 
-   - Include a clear description of changes.
-   - Add screenshots or GIFs for UI changes.
-   - Link to relevant issues or discussions.
+### CSS Structure (~200 lines inline in `<style>`)
 
-### Example Workflow for Agents
-1. **User Request**: "Add a new achievement for 50 km² revealed."
-2. **Agent Action**:
-   - Add the achievement to `DEFAULT_ACHIEVEMENTS` in `src/main.js`.
-   - Test by importing a large GPX file to trigger the achievement.
-   - Commit with message: "Add 50 km² achievement to default list."
+- Custom properties for theming (`--fog-bg`, `--glass-bg`, `--accent`, `--ease-out`, etc.)
+- `.glass` utility class for glassmorphism
+- Responsive via `@media (min-width: 768px)`
+- Helper classes `.mobile-only` / `.desktop-only` for element visibility per breakpoint
+- Leaflet overrides for dark theme (zoom controls, attribution)
+- Custom scrollbar styling
 
----
+## Architecture
 
-## 📦 Build & Deployment
+- **Entrypoint**: `index.html` → `<script type="module" src="/src/main.js">`
+- **Fog reveal**: buffer each track point at 15m → save each circle individually to `fogPolygons` store (same approach for GPS and imports). `turf.union()` is used only for area calculation, not for storage.
+- **Fog overlay**: dark (`#1a1a2e`, 85%) viewport-bounds polygon minus revealed areas via `turf.difference`. Re-renders on `map.on('moveend')`. Guarded by `fogUpdateGuard` to prevent concurrent execution.
+- **5 IndexedDB stores**: `fogPolygons`, `tracks`, `achievements`, `userLevel`, `stats`
+- **8 default achievements** in `DEFAULT_ACHIEVEMENTS` array (`main.js:47-119`). Checks: area, percent, distance, level, trackCount.
+- **Level system**: `XP = area_km2 * 10`, `level = floor(XP / 500) + 1`
+- **World area constant**: `WORLD_TOTAL_AREA = 510072000` km²
 
-### Local Development
-```bash
-cd fog-of-world-web
-npm install          # Install dependencies
-npm run dev         # Start dev server (http://localhost:3000)
-```
+## Key conventions
 
-### Production Build
-```bash
-npm run build       # Generates optimized files in dist/
-```
+- **All HTML-called functions must be on `window`**: every `onclick` handler in `index.html` needs a `window.fnName = fnName` assignment in `main.js`. Current exposed fns: `toggleSidebar`, `toggleBottomSheet`, `toggleDesktopSidebar`, `toggleTracking`, `showImportModal`, `closeImportModal`, `handleFileImport`, `locateMe`, `startTracking`, `stopTracking`, `showDBModal`, `closeDBModal`, `exportDatabase`, `importDatabase`.
+- **`leaflet-draw` is loaded dynamically**: `await import('leaflet-draw')` inside `initMap()`, not as static import. Static import fails in ESM + CommonJS boundary. `window.L = L` is set beforehand for plugin compatibility.
+- **No track layer group**: `drawTrackOnMap()` adds polylines to `tracksLayer` (a `L.layerGroup`). Clear it before redrawing on import/refresh.
+- **GPS markers in layer group**: GPS tracking adds circle markers to `gpsTrackLayer` (a `L.layerGroup`). Cleared on `stopTracking()` to prevent memory leaks.
 
-### Deployment Options
-1. **GitHub Pages**:
-   ```bash
-   npm run build
-   git add dist -f
-   git commit -m "Add built files"
-   git subtree push --prefix dist origin gh-pages
-   ```
-   - Enable GitHub Pages in repo settings (Branch: `gh-pages`).
+## Gotchas
 
-2. **Netlify/Vercel**:
-   - Drag and drop the `dist/` folder to the platform.
-   - Or connect the repo and set the build command to `npm run build`.
-
----
-
-## 🐛 Bug Reporting & Fixes
-
-### How to Report Bugs
-1. **Describe the Issue**: Include steps to reproduce, expected vs. actual behavior.
-2. **Environment**: Browser, OS, and device (if mobile).
-3. **Logs**: Console errors or warnings (check browser DevTools).
-4. **Screenshots**: For UI issues, include visuals.
-
-### Common Issues & Fixes
-| **Issue**                          | **Possible Fix**                                                                                     |
-|------------------------------------|-----------------------------------------------------------------------------------------------------|
-| Fog not revealing on import         | Check if GPX/KML parser is correctly extracting points. Verify `revealFogAlongTrack()` is called.   |
-| GPS tracking not working            | Ensure browser has geolocation permissions. Test on HTTPS or localhost.                              |
-| Achievements not unlocking         | Debug `checkAchievements()` logic. Verify stats (area/distance) are updating correctly.             |
-| Map tiles not loading               | Check OpenStreetMap URL in `L.tileLayer()`. Ensure internet connection.                              |
-| IndexedDB errors                    | Clear browser data or check for quota limits.                                                      |
-
----
-
-## 🔧 Technical Details
-
-### Fog Reveal Algorithm
-- **Radius**: 15 meters (configurable via `REVEAL_RADIUS` in `main.js`).
-- **Method**: 
-  1. For each point in a track, create a 15m buffer polygon using Turf.js.
-  2. Union all polygons into a single shape to avoid overlaps.
-  3. Save the polygon to IndexedDB and render it as a fog-free area on the map.
-- **Performance**: Uses vector polygons (not raster) for precision and scalability.
-
-### Data Storage (IndexedDB)
-- **Stores**:
-  - `fogPolygons`: Revealed fog areas (polygon coordinates + metadata).
-  - `tracks`: Imported or recorded tracks (points, color, distance).
-  - `achievements`: User achievements (unlocked status, timestamps).
-  - `userLevel`: XP, current level, and next level threshold.
-  - `stats`: Total revealed area, distance, and percentage of the world.
-
-### PWA Configuration
-- **Service Worker**: Caches OpenStreetMap tiles for offline use.
-- **Manifest**: Defines app name, icons, and theme colors.
-- **Offline Support**: Works without internet after first load (except live GPS).
-
----
-
-## 📜 Contributing
-
-### How to Contribute
-1. **Fork the Repository**: Create a fork of `Imacikus/OpenFog-Online`.
-2. **Create a Branch**: Use a descriptive name (e.g., `feature/add-new-achievements`).
-3. **Commit Changes**: Follow the [commit guidelines](#code-style).
-4. **Open a PR**: Link to the issue (if applicable) and describe your changes.
-
-### PR Template
-```markdown
-## Summary
-- [x] Added feature X
-- [x] Fixed bug Y
-
-## Changes
-- Modified `src/main.js` to add new achievement logic.
-- Updated `index.html` to include new UI elements.
-
-## Testing
-- Tested GPX import with sample files.
-- Verified fog reveal works on live tracking.
-
-## Screenshots (if applicable)
-![Screenshot](url)
-```
-
----
-
-## 📄 License
-This project is open-source and uses the following licenses:
-- **Code**: MIT License (default for the repository).
-- **Dependencies**: Respect the licenses of all used libraries (e.g., Leaflet, Turf.js).
-
----
-
-## 🆘 Support
-- **Questions**: Open a GitHub Discussion.
-- **Bugs**: Open an Issue with details.
-- **Feature Requests**: Open an Issue with a clear description.
-
----
-
-## 🔗 Useful Links
-- [Repository](https://github.com/Imacikus/OpenFog-Online)
-- [Leaflet.js Docs](https://leafletjs.com/reference.html)
-- [Turf.js Docs](https://turfjs.org/docs/)
-- [Font Awesome Icons](https://fontawesome.com/icons)
-- [IndexedDB API](https://developer.mozilla.org/en-US/docs/Web/API/IndexedDB_API)
+- **Unused deps**: `gpx-parse` and `@mapbox/togeojson` in package.json are **not imported**. GPX/KML parsing uses raw `DOMParser`. `jszip` is imported dynamically for `.kmz` files.
+- **`REVEAL_RADIUS = 0.015` is in kilometers** (15m). Passed to Turf `buffer()` with `{units: 'kilometers'}`.
+- **GPS tracking doesn't accumulate distance**: `revealFogAtPoint()` passes `0` for distance to `updateStats()`.
+- **KMZ File-Read**: `handleFileImport` liest nur GPX/KML via `file.text()`. KMZ bekommt das `file`-Objekt direkt für `arrayBuffer()` (kein doppelter Read).
+- **OSM tile caching broken**: Workbox regex `{s}` is a Leaflet template variable, not a regex pattern. Tiles are not cached offline.
+- **Missing icon files**: `public/icons/icon-{192,512}x{192,512}.png` don't exist but are referenced in `manifest.json`.
+- **No DB migration**: IndexedDB version is hardcoded `1` in `openDB('FogOfWorldDB', 1)`.
+- **Debug globals**: `window.db` and `window.map` are exposed after init.
+- **Map center**: Germany `[51.1657, 10.4515]` zoom 6.
+- **`saveFogPolygon` stores full `geometry` object** (with `type`). Both `updateFogOverlay` and `updateRevealedTrail` handle `Polygon` and `MultiPolygon`. Old entries with only `coordinates` (no `geometry.type`) are still supported via fallback.
+- **Union only for area**: `revealFogAlongTrack` und `revealFogAtPoint` speichern jeden 15m-Kreis einzeln in `fogPolygons`. `turf.union()` dient nur der exakten Flächenberechnung, nicht der Speicherung.
+- **Init has try-catch**: errors show a visible message inside the `#map` div instead of crashing silently.

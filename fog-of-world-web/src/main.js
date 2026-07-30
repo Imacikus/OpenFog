@@ -1,6 +1,5 @@
 // Fog of World WebApp - Hauptdatei
 import L from 'leaflet';
-import 'leaflet-draw';
 import { openDB } from 'idb';
 import * as turf from '@turf/turf';
 
@@ -172,82 +171,140 @@ async function initStats() {
 // ==================== KARTEN-INITIALISIERUNG ====================
 let map;
 let fogLayer;
+let tracksLayer;
+let gpsTrackLayer;
 let drawnItems;
 let currentTrack = { points: [] };
 let isTracking = false;
 let watchId = null;
 
-function initMap() {
+async function initMap() {
+  // L global verfügbar machen für Leaflet-Plugins (leaflet-draw u.a.)
+  window.L = L;
+
+  // leaflet-draw dynamisch laden — static import scheitert bei CommonJS/UMD-Modulen im ESM-Kontext
+  try {
+    await import('leaflet-draw');
+  } catch (e) {
+    console.warn('leaflet-draw nicht geladen, Zeichenfunktion deaktiviert:', e);
+  }
+
   // Karte initialisieren
-  map = L.map('map').setView([51.1657, 10.4515], 6); // Deutschland als Startpunkt
-  
-  // OpenStreetMap Layer
+  map = L.map('map').setView([51.1657, 10.4515], 6);
+
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
   }).addTo(map);
-  
-  // Fog Layer (wird später hinzugefügt)
+
   fogLayer = L.layerGroup().addTo(map);
-  
-  // Leaflet.Draw für Track-Editor
+  tracksLayer = L.layerGroup().addTo(map);
+  gpsTrackLayer = L.layerGroup().addTo(map);
+
   drawnItems = new L.FeatureGroup();
   map.addLayer(drawnItems);
-  
-  const drawControl = new L.Control.Draw({
-    edit: { featureGroup: drawnItems },
-    draw: {
-      polyline: true,
-      polygon: false,
-      rectangle: false,
-      circle: false,
-      marker: false
+
+  if (L.Control.Draw) {
+    const drawControl = new L.Control.Draw({
+      edit: { featureGroup: drawnItems },
+      draw: {
+        polyline: true,
+        polygon: false,
+        rectangle: false,
+        circle: false,
+        marker: false
+      }
+    });
+    map.addControl(drawControl);
+
+    map.on(L.Draw.Event.CREATED, async (e) => {
+      const layer = e.layer;
+      drawnItems.addLayer(layer);
+      const track = convertLeafletLayerToTrack(layer);
+      await saveTrack(track);
+      await revealFogAlongTrack(track);
+      await updateUI();
+    });
+  }
+
+  // Fog bei Bewegung neu berechnen (Viewport-basiert)
+  map.on('moveend', () => updateFogOverlay());
+}
+
+// ==================== FOG OVERLAY ====================
+let fogOverlayLayer = null;
+let fogUpdateGuard = false;
+
+function makeFogStyle() {
+  return { color: '#1a1a2e', weight: 0, fillColor: '#1a1a2e', fillOpacity: 0.85, interactive: false };
+}
+
+function buildFogBounds() {
+  const b = map.getBounds().pad(3);
+  return turf.bboxPolygon([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+}
+
+function geoToTurf(p) {
+  const g = p.geometry || { type: 'Polygon', coordinates: p.coordinates };
+  return g.type === 'MultiPolygon' ? turf.multiPolygon(g.coordinates) : turf.polygon(g.coordinates);
+}
+
+async function updateFogOverlay() {
+  if (!map || fogUpdateGuard) return;
+  fogUpdateGuard = true;
+  try {
+    if (fogOverlayLayer) map.removeLayer(fogOverlayLayer);
+    fogOverlayLayer = null;
+
+    const polygons = await db.getAll('fogPolygons');
+    const fogRect = buildFogBounds();
+
+    if (polygons.length === 0) {
+      fogOverlayLayer = L.geoJSON(fogRect, makeFogStyle()).addTo(map);
+      return;
     }
-  });
-  map.addControl(drawControl);
-  
-  // Event-Handler für gezeichnete Tracks
-  map.on(L.Draw.Event.CREATED, async (e) => {
-    const layer = e.layer;
-    drawnItems.addLayer(layer);
-    
-    // Konvertiere zu Track
-    const track = convertLeafletLayerToTrack(layer);
-    await saveTrack(track);
-    
-    // Enthülle Nebel entlang des Tracks
-    await revealFogAlongTrack(track);
-    
-    // Aktualisiere UI
-    await updateUI();
+
+    // Alle enthüllten Polygone zu EINER Fläche vereinen
+    let revealed = null;
+    for (const p of polygons) {
+      const poly = geoToTurf(p);
+      if (!poly) continue;
+      if (!revealed) { revealed = poly; continue; }
+      try {
+        const m = turf.union(revealed, poly);
+        if (m) revealed = m;
+      } catch (_) {}
+    }
+
+    // Nebel = Viewport-Rechteck minus enthüllte Fläche
+    const fog = turf.difference(fogRect, revealed);
+    if (fog) {
+      fogOverlayLayer = L.geoJSON(fog, makeFogStyle()).addTo(map);
+    } else {
+      fogOverlayLayer = L.geoJSON(fogRect, makeFogStyle()).addTo(map);
+    }
+  } catch (e) {
+    console.warn('Fog-Overlay-Fehler:', e);
+    fogOverlayLayer = L.geoJSON(fogRect, makeFogStyle()).addTo(map);
+  } finally {
+    fogUpdateGuard = false;
+  }
+}
+
+function updateRevealedTrail() {
+  fogLayer.clearLayers();
+  db.getAll('fogPolygons').then(polygons => {
+    for (const p of polygons) {
+      const g = p.geometry || { type: 'Polygon', coordinates: p.coordinates };
+      L.geoJSON({ type: 'Feature', geometry: g, properties: {} }, {
+        style: { fillColor: 'transparent', color: 'rgba(255,255,255,0.25)', weight: 1, fillOpacity: 0 }
+      }).addTo(fogLayer);
+    }
   });
 }
 
-// ==================== FOG LAYER ====================
-function updateFogLayer() {
-  fogLayer.clearLayers();
-  
-  // Lade alle Fog-Polygone
-  db.getAll('fogPolygons').then(polygons => {
-    polygons.forEach(polygon => {
-      const geoJSON = {
-        type: 'Feature',
-        geometry: {
-          type: 'Polygon',
-          coordinates: polygon.coordinates
-        },
-        properties: {}
-      };
-      
-      L.geoJSON(geoJSON, {
-        style: {
-          fillColor: 'rgba(200, 200, 200, 0.7)',
-          fillOpacity: 0.7,
-          color: 'rgba(200, 200, 200, 0.7)',
-          weight: 0
-        }
-      }).addTo(fogLayer);
-    });
-  });
+async function refreshDisplay() {
+  updateRevealedTrail();
+  await updateFogOverlay();
 }
 
 // ==================== TRACK-FUNKTIONEN ====================
@@ -317,34 +374,30 @@ async function revealFogAlongTrack(track) {
       REVEAL_RADIUS,
       { units: 'kilometers' }
     );
-    
+    if (!circle) continue;
+
+    await saveFogPolygon(circle);
+
     if (!unionPolygon) {
       unionPolygon = circle;
     } else {
       try {
-        unionPolygon = turf.union(unionPolygon, circle);
-      } catch (e) {
-        // Falls Union fehlschlägt (z. B. bei nicht überlappenden Polygonen)
-        console.warn('Union fehlgeschlagen, füge Polygon separat hinzu');
-        await saveFogPolygon(circle);
-        continue;
-      }
+        const merged = turf.union(unionPolygon, circle);
+        if (merged) unionPolygon = merged;
+      } catch (_) {}
     }
   }
   
   if (unionPolygon) {
-    await saveFogPolygon(unionPolygon);
-    
-    // Aktualisiere Statistiken
-    const area = turf.area(unionPolygon) / 1000000; // in km²
-    await updateStats(area, track.metadata.distance / 1000); // distance in km
+    const area = turf.area(unionPolygon) / 1000000;
+    await updateStats(area, track.metadata.distance / 1000);
   }
   
-  // Aktualisiere Fog Layer
-  updateFogLayer();
+  await refreshDisplay();
 }
 
 async function saveFogPolygon(polygon) {
+  if (!polygon || !polygon.geometry) return;
   const tx = db.transaction('fogPolygons', 'readwrite');
   const store = tx.objectStore('fogPolygons');
   
@@ -352,7 +405,8 @@ async function saveFogPolygon(polygon) {
   
   await store.add({
     id: crypto.randomUUID(),
-    coordinates: polygon.geometry.coordinates,
+    geometry: polygon.geometry,
+    coordinates: polygon.geometry.coordinates, // backward compat
     area,
     source: 'track',
     createdAt: Date.now()
@@ -485,52 +539,107 @@ async function updateUI() {
   const level = await db.get('userLevel', 'main');
   const achievements = await db.getAll('achievements');
   
-  // Statistiken
+  // Gemeinsame Formatierung
+  const fmtArea = v => `${v.toFixed(2)} km²`;
+  const fmtPct = v => `${v.toFixed(6)} %`;
+  const fmtDist = v => `${v.toFixed(2)} km`;
+  
   if (stats) {
-    document.getElementById('revealedArea').textContent = `${stats.totalRevealedArea.toFixed(2)} km²`;
-    document.getElementById('revealedPercent').textContent = `${stats.totalRevealedPercent.toFixed(6)}%`;
-  }
-  
-  // Level
-  if (level) {
-    document.getElementById('currentLevel').textContent = level.currentLevel;
-    document.getElementById('currentXP').textContent = `${Math.floor(level.xp)} XP`;
-    document.getElementById('nextLevelXP').textContent = `${level.xpForNextLevel} XP`;
+    const a = fmtArea(stats.totalRevealedArea);
+    const p = fmtPct(stats.totalRevealedPercent);
+    const d = fmtDist(stats.totalDistance);
+    const tc = stats.trackCount || 0;
     
-    const xpProgress = document.getElementById('xpProgress');
-    xpProgress.value = level.xp % XP_PER_LEVEL;
-    xpProgress.max = XP_PER_LEVEL;
+    // Bottom Sheet
+    document.getElementById('sheetRevealedArea').textContent = a;
+    document.getElementById('sheetAreaFull').textContent = a;
+    document.getElementById('sheetPercentFull').textContent = p;
+    document.getElementById('sheetDistance').textContent = d;
+    document.getElementById('sheetTrackCount').textContent = tc;
+    
+    // Sidebar
+    document.getElementById('sbAreaFull').textContent = a;
+    document.getElementById('sbPercentFull').textContent = p;
+    document.getElementById('sbDistance').textContent = d;
+    document.getElementById('sbTrackCount').textContent = tc;
   }
   
-  // Achievements
-  const achievementsList = document.getElementById('achievementsList');
-  achievementsList.innerHTML = achievements
+  if (level) {
+    const xpInLevel = level.xp % XP_PER_LEVEL;
+    const pct = (xpInLevel / XP_PER_LEVEL) * 100;
+    
+    // Bottom Sheet Preview
+    document.getElementById('sheetLevel').textContent = level.currentLevel;
+    document.getElementById('sheetXpProgress').value = xpInLevel;
+    
+    // Bottom Sheet Expanded
+    document.getElementById('sheetLevelFull').textContent = level.currentLevel;
+    document.getElementById('sheetXpBarFill').style.width = `${pct}%`;
+    document.getElementById('sheetXPFull').textContent = Math.floor(level.xp);
+    document.getElementById('sheetNextXP').textContent = level.xpForNextLevel;
+    
+    // Sidebar
+    document.getElementById('sbLevelFull').textContent = level.currentLevel;
+    document.getElementById('sbXpBarFill').style.width = `${pct}%`;
+    document.getElementById('sbXPFull').textContent = Math.floor(level.xp);
+    document.getElementById('sbNextXP').textContent = level.xpForNextLevel;
+  }
+  
+  // Achievements (beide Container)
+  const html = achievements
     .sort((a, b) => a.unlocked === b.unlocked ? 0 : a.unlocked ? -1 : 1)
-    .map(achievement => `
-      <div class="achievement ${achievement.unlocked ? 'unlocked' : 'locked'}">
-        <span class="achievement-icon">${achievement.icon}</span>
-        <div class="achievement-content">
-          <h3>${achievement.name}</h3>
-          <p>${achievement.description}</p>
+    .map(a => `
+      <div class="achievement-card ${a.unlocked ? 'unlocked' : 'locked'}">
+        <div class="achievement-icon">${a.icon}</div>
+        <div class="achievement-info">
+          <h4>${a.name}</h4>
+          <p>${a.description}</p>
         </div>
       </div>
     `)
     .join('');
+  
+  document.getElementById('sheetAchievementsList').innerHTML = html;
+  document.getElementById('sbAchievementsList').innerHTML = html;
 }
 
+// ==================== EXPORT FÜR HTML-ONCLICK ====================
+// Module-Script-Funktionen sind nicht global sichtbar — daher explizit auf window heben
+
 function toggleSidebar() {
-  const sidebar = document.getElementById('sidebar');
-  sidebar.classList.toggle('hidden');
+  if (window.innerWidth < 768) {
+    toggleBottomSheet();
+  } else {
+    toggleDesktopSidebar();
+  }
 }
+window.toggleSidebar = toggleSidebar;
+
+function toggleBottomSheet() {
+  document.getElementById('bottomSheet').classList.toggle('open');
+}
+window.toggleBottomSheet = toggleBottomSheet;
+
+function toggleDesktopSidebar() {
+  document.getElementById('sidebarDesktop').classList.toggle('open');
+}
+window.toggleDesktopSidebar = toggleDesktopSidebar;
+
+function toggleTracking() {
+  if (isTracking) { stopTracking(); } else { startTracking(); }
+}
+window.toggleTracking = toggleTracking;
 
 function showImportModal() {
   document.getElementById('importModal').classList.add('show');
 }
+window.showImportModal = showImportModal;
 
 function closeImportModal() {
   document.getElementById('importModal').classList.remove('show');
   document.getElementById('fileInput').value = '';
 }
+window.closeImportModal = closeImportModal;
 
 // ==================== GPX/KML-IMPORT ====================
 async function handleFileImport(event) {
@@ -538,15 +647,17 @@ async function handleFileImport(event) {
   if (!file) return;
   
   try {
-    const content = await file.text();
     let trackData;
     
-    if (file.name.endsWith('.gpx')) {
-      trackData = await parseGPXFile(content);
-    } else if (file.name.endsWith('.kml')) {
-      trackData = await parseKMLFile(content);
+    if (file.name.endsWith('.kmz')) {
+      trackData = await parseKMZFile(file);
+    } else if (file.name.endsWith('.gpx') || file.name.endsWith('.kml')) {
+      const content = await file.text();
+      trackData = file.name.endsWith('.gpx')
+        ? await parseGPXFile(content)
+        : await parseKMLFile(content);
     } else {
-      alert('Ununterstütztes Dateiformat. Bitte wähle eine GPX- oder KML-Datei.');
+      alert('Ununterstütztes Dateiformat. Bitte wähle eine GPX-, KML- oder KMZ-Datei.');
       return;
     }
     
@@ -570,6 +681,7 @@ async function handleFileImport(event) {
     closeImportModal();
   }
 }
+window.handleFileImport = handleFileImport;
 
 async function parseGPXFile(content) {
   // Parsen der GPX-Datei
@@ -655,6 +767,15 @@ async function parseKMLFile(content) {
   };
 }
 
+async function parseKMZFile(file) {
+  const JSZip = await import('jszip').then(m => m.default);
+  const zip = await JSZip.loadAsync(await file.arrayBuffer());
+  const kmlFile = Object.keys(zip.files).find(f => f.endsWith('.kml'));
+  if (!kmlFile) throw new Error('Keine KML-Datei im KMZ-Archiv gefunden.');
+  const content = await zip.files[kmlFile].async('text');
+  return parseKMLFile(content);
+}
+
 function getRandomColor() {
   const colors = ['#3498db', '#e74c3c', '#2ecc71', '#f39c12', '#9b59b6', '#1abc9c'];
   return colors[Math.floor(Math.random() * colors.length)];
@@ -666,11 +787,101 @@ function drawTrackOnMap(track) {
     color: track.color,
     weight: track.width,
     opacity: 0.8
-  }).addTo(map);
+  }).addTo(tracksLayer);
 }
+
+// ==================== DATENBANK-BACKUP ====================
+const DB_STORES = ['fogPolygons', 'tracks', 'achievements', 'userLevel', 'stats'];
+
+function showDBModal() { document.getElementById('dbModal').classList.add('show'); }
+window.showDBModal = showDBModal;
+
+function closeDBModal() { document.getElementById('dbModal').classList.remove('show'); document.getElementById('dbFileInput').value = ''; }
+window.closeDBModal = closeDBModal;
+
+async function exportDatabase() {
+  if (!db) { alert('Datenbank noch nicht bereit.'); return; }
+  try {
+    const backup = {};
+    for (const store of DB_STORES) {
+      backup[store] = await db.getAll(store);
+    }
+    backup._exportedAt = new Date().toISOString();
+    backup._version = 1;
+
+    const blob = new Blob([JSON.stringify(backup, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `fog-of-world-backup-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    alert('Daten exportiert!');
+  } catch (e) {
+    alert('Export fehlgeschlagen: ' + e.message);
+  }
+}
+window.exportDatabase = exportDatabase;
+
+async function importDatabase(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  try {
+    const text = await file.text();
+    const backup = JSON.parse(text);
+    if (!backup._version) { alert('Keine gültige Backup-Datei.'); return; }
+
+    if (!confirm('Existierende Daten werden überschrieben. Fortfahren?')) { closeDBModal(); return; }
+
+    const tx = db.transaction(DB_STORES, 'readwrite');
+    for (const store of DB_STORES) {
+      const os = tx.objectStore(store);
+      await os.clear();
+      const items = backup[store] || [];
+      for (const item of items) {
+        await os.add(item);
+      }
+    }
+    await tx.done;
+
+    closeDBModal();
+    await loadAndRefresh();
+    alert('Daten erfolgreich wiederhergestellt!');
+  } catch (e) {
+    alert('Import fehlgeschlagen: ' + e.message);
+  }
+}
+window.importDatabase = importDatabase;
+
+async function loadAndRefresh() {
+  tracksLayer.clearLayers();
+  const tracks = await getAllTracks();
+  tracks.forEach(t => drawTrackOnMap(t));
+  await refreshDisplay();
+  await updateUI();
+}
+
+// ==================== STANDORT-FUNKTIONEN ====================
+function locateMe() {
+  if (!map) { console.warn('Karte noch nicht initialisiert'); return; }
+  if (!navigator.geolocation) {
+    alert('Geolocation wird von deinem Browser nicht unterstützt.');
+    return;
+  }
+  const onLocationFound = (e) => {
+    L.circleMarker(e.latlng, { radius: 8, fillColor: '#3498db', color: '#fff', weight: 2, fillOpacity: 0.9 })
+      .addTo(map)
+      .bindPopup('Dein Standort')
+      .openPopup();
+    map.off('locationfound', onLocationFound);
+  };
+  map.on('locationfound', onLocationFound);
+  map.locate({ setView: true, maxZoom: 16 });
+}
+window.locateMe = locateMe;
 
 // ==================== LIVE-GPS-TRACKING ====================
 function startTracking() {
+  if (!map) { console.warn('Karte noch nicht initialisiert'); return; }
   if (isTracking) return;
   
   if (!navigator.geolocation) {
@@ -681,8 +892,9 @@ function startTracking() {
   isTracking = true;
   currentTrack = { points: [] };
   
-  document.getElementById('startTrackingBtn').classList.add('hidden');
-  document.getElementById('stopTrackingBtn').classList.remove('hidden');
+  document.getElementById('fabTrack').classList.add('tracking');
+  document.getElementById('fabTrack').innerHTML = '<i class="fas fa-stop"></i>';
+  document.getElementById('fabTrack').title = 'Tracking stoppen';
   
   watchId = navigator.geolocation.watchPosition(
     (position) => {
@@ -703,7 +915,7 @@ function startTracking() {
         weight: 1,
         opacity: 1,
         fillOpacity: 0.8
-      }).addTo(map);
+      }).addTo(gpsTrackLayer);
       
       // Enthülle Nebel um den aktuellen Punkt
       revealFogAtPoint(latitude, longitude);
@@ -726,6 +938,7 @@ async function revealFogAtPoint(lat, lng) {
     REVEAL_RADIUS,
     { units: 'kilometers' }
   );
+  if (!circle) return;
   
   await saveFogPolygon(circle);
   
@@ -733,24 +946,25 @@ async function revealFogAtPoint(lat, lng) {
   const area = Math.PI * REVEAL_RADIUS * REVEAL_RADIUS;
   await updateStats(area, 0); // Keine Distanz hinzufügen
   
-  // Aktualisiere Fog Layer
-  updateFogLayer();
+  await refreshDisplay();
 }
 
-function stopTracking() {
+async function stopTracking() {
   if (!isTracking) return;
   
   isTracking = false;
   
-  document.getElementById('startTrackingBtn').classList.remove('hidden');
-  document.getElementById('stopTrackingBtn').classList.add('hidden');
+  document.getElementById('fabTrack').classList.remove('tracking');
+  document.getElementById('fabTrack').innerHTML = '<i class="fas fa-map-marker-alt"></i>';
+  document.getElementById('fabTrack').title = 'Tracking starten';
+  
+  gpsTrackLayer.clearLayers();
   
   if (watchId) {
     navigator.geolocation.clearWatch(watchId);
     watchId = null;
   }
   
-  // Speichere Track
   if (currentTrack.points.length > 0) {
     const track = {
       id: crypto.randomUUID(),
@@ -766,40 +980,37 @@ function stopTracking() {
       }
     };
     
-    saveTrack(track).then(() => {
-      // Enthülle Nebel entlang des gesamten Tracks (für den Fall, dass Punkte zu weit auseinander liegen)
-      revealFogAlongTrack(track);
-      
-      // Zeichne Track auf der Karte
-      drawTrackOnMap(track);
-      
-      // Aktualisiere UI
-      updateUI();
-    });
+    await saveTrack(track);
+    await revealFogAlongTrack(track);
+    drawTrackOnMap(track);
+    await updateUI();
   }
   
   currentTrack = { points: [] };
 }
+window.startTracking = startTracking;
+window.stopTracking = stopTracking;
 
 // ==================== INITIALISIERUNG ====================
 document.addEventListener('DOMContentLoaded', async () => {
-  // Initialisiere Datenbank
-  await initDB();
-  
-  // Initialisiere Karte
-  initMap();
-  
-  // Lade bestehende Tracks und zeichne sie
-  const tracks = await getAllTracks();
-  tracks.forEach(track => drawTrackOnMap(track));
-  
-  // Lade Fog Layer
-  updateFogLayer();
-  
-  // Aktualisiere UI
-  await updateUI();
-});
+  try {
+    await initDB();
+    await initMap();
 
-// Export für Debugging
-window.db = db;
-window.map = map;
+    const tracks = await getAllTracks();
+    tracks.forEach(track => drawTrackOnMap(track));
+
+    await refreshDisplay();
+    await updateUI();
+
+    window.db = db;
+    window.map = map;
+  } catch (e) {
+    console.error('Fehler beim Initialisieren der App:', e);
+    document.getElementById('map').innerHTML = `<div class="map-error">
+      <h2><i class="fas fa-exclamation-triangle"></i> Fehler beim Laden</h2>
+      <p>${e.message}</p>
+      <p><small>Öffne die Browser-Konsole (F12) für Details.</small></p>
+    </div>`;
+  }
+});
