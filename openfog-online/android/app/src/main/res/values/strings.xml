@@ -1,7 +1,0 @@
-<?xml version='1.0' encoding='utf-8'?>
-<resources>
-    <string name="app_name">Open Fog Online</string>
-    <string name="title_activity_main">Open Fog Online</string>
-    <string name="package_name">com.openfog.online</string>
-    <string name="custom_url_scheme">com.openfog.online</string>
-</resources>

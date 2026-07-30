@@ -1,123 +1,127 @@
 # AGENTS.md
 
-Single-page browser app (vanilla JS) + **Capacitor Android App**. Leaflet map, Turf.js geospatial, IndexedDB via `idb`. All source in one file + inline CSS.
+**OpenFog** – Single-page vanilla JS app + **Capacitor Android App**. Leaflet map, Turf.js, IndexedDB via `idb`. Source in `src/main.js` (~1182 lines) + `index.html` (~750 lines, inline CSS). Vite `@` alias maps to `src/`.
 
-## Commands (run from `fog-of-world-web/`)
+## Commands
+
+Run from `fog-of-world-web/`:
 
 | Command | Action |
 |---------|--------|
-| `npm install` | Install dependencies |
 | `npm run dev` | Dev server at http://localhost:3000 |
 | `npm run build` | Production build to `dist/` |
+| `npm run preview` | Preview production build |
 | `npx cap sync` | Copy web build to Android project |
 | `cd android && ./gradlew assembleDebug` | Build debug APK |
-| `adb install -r android/app/build/outputs/apk/debug/app-debug.apk` | Install on device |
 
-## Android Commands (run from `openfog-online/`)
-
-| Command | Action |
-|---------|--------|
-| `cd android && ./gradlew assembleDebug` | Build debug APK |
-| `adb install OpenFogOnline.apk` | Install on connected device |
-
-## APK build (full pipeline)
-
+APK full pipeline (from `fog-of-world-web/`):
 ```bash
 npm run build && npx cap sync && cd android && ./gradlew assembleDebug && adb install -r app/build/outputs/apk/debug/app-debug.apk
+cp android/app/build/outputs/apk/debug/app-debug.apk ../../openfog/OpenFog.apk
 ```
-
-Then copy: `cp android/app/build/outputs/apk/debug/app-debug.apk ../../openfog-online/OpenFogOnline.apk`
-
-## Key files
-
-- `fog-of-world-web/index.html` — entry point + inline CSS + HTML
-- `fog-of-world-web/src/main.js` — all app logic (~1245 lines)
-- `fog-of-world-web/vite.config.js` — Vite + PWA plugin
-- `fog-of-world-web/capacitor.config.json` — Capacitor config (webDir: dist, appId `com.openfog.online`)
-- `fog-of-world-web/android/` — Capacitor Android project (generated, minSdk 23)
-- `fog-of-world-web/android/variables.gradle` — minSdkVersion, compileSdkVersion, etc.
-- `fog-of-world-web/android/app/src/main/AndroidManifest.xml` — location permissions added
-- `fog-of-world-web/public/icons/icon-{192,512}x{192,512}.png` — PWA/Android icons
-- `openfog-online/` — standalone Android app folder (copy of android/ + APK)
-- `openfog-online/OpenFogOnline.apk` — prebuilt debug APK
-
-## Dependencies
-
-| Package | Version | Usage |
-|---------|---------|-------|
-| `leaflet` | ^1.9.4 | Map |
-| `@turf/turf` | ^7.1.0 | Geospatial (buffer, union, difference, area) |
-| `idb` | ^8.0.0 | IndexedDB wrapper |
-| `jszip` | ^3.10.1 | KMZ parsing (static import) |
-| `@capacitor/geolocation` | ^8.2.0 | GPS on Android (native) |
-| `vite` | ^4.5.0 | Build |
-| `vite-plugin-pwa` | ^0.17.5 | Service worker + manifest |
-| `@capacitor/core` / `@capacitor/cli` / `@capacitor/android` | ^6.0.0 | Capacitor |
-
-**Unused (in package.json but never imported):** `gpx-parse`, `@mapbox/togeojson`, `leaflet-draw`.
-
-## UI Architecture
-
-### Design System (Dark Theme, Map-First)
-
-- **Theme**: Dark (`#1a1a2e` bg, `#6c63ff` accent). No light mode toggle.
-- **Glassmorphism**: Panels use `backdrop-filter: blur(16px)` + `rgba(22,33,62,0.78)` background via `.glass` class.
-- **Map**: Fixed full-viewport (`position: fixed; inset: 0`), z-index 0. All UI floats above.
-- **Responsive**: Single breakpoint at 768px.
-- **Mobile (< 768px)**: Glass header (48px), Bottom Sheet for stats, FAB for tracking.
-- **Desktop (≥ 768px)**: Glass header, collapsed sidebar (52px → 260px on hover/click), FAB.
-
-### Layout Components
-
-- **Header** (`#header`): Fixed top, 48px. App name + Locate + Import + DB backup buttons (Import/DB visible on all breakpoints now).
-- **FAB** (`#fabTrack`): Bottom-right. Toggles GPS tracking. Has 3 visual states: default (blue pin icon), searching (orange spinner, `fab.searching`), tracking (red pulse, `fab.tracking`).
-- **Bottom Sheet** (`#bottomSheet`): Fixed bottom mobile. Preview 68px, tap to expand 70vh. Stats + level + achievements.
-- **Desktop Sidebar** (`#sidebarDesktop`): Fixed left-center, collapsed 52px, click to expand 260px.
-- **Modals** (`#importModal`, `#dbModal`, `#settingsModal`): Fullscreen overlay, glass content.
+Detailed Android prerequisites in `openfog/README.md`.
+Detailed Android prerequisites in `openfog/README.md`.
 
 ## Architecture
 
-- **Entrypoint**: `index.html` → `<script type="module" src="/src/main.js">`
-- **Fog reveal**: buffer each track point at 15m → save each circle individually to `fogPolygons` store. `turf.union()` used for area calculation on stop/import.
-- **Fog overlay**: dark (`#1a1a2e`, 85%) viewport-bounds polygon minus revealed areas via `turf.difference`. Re-renders on `moveend`. Guarded by `fogUpdateGuard`.
-- **5 IndexedDB stores**: `fogPolygons`, `tracks`, `achievements`, `userLevel`, `stats`
-- **8 default achievements** (`main.js:48-121`). Checks: area, percent, distance, level, trackCount.
-- **Level system**: `XP = area_km2 * 10`, `level = floor(XP / 500) + 1`
-- **World area**: `WORLD_TOTAL_AREA = 510072000` km²
+- **Entrypoint**: `index.html:770` → `<script type="module" src="/src/main.js">`
+- **Fog reveal**: `turf.buffer()` each point at `REVEAL_RADIUS=0.015`km (15m) → save each circle to `fogPolygons` store. `turf.union()` only for area calculation (stop/import), never for storage.
+- **Fog overlay**: viewport-bounds minus revealed via `turf.difference()`. Re-renders on `moveend`. Guarded by `fogUpdateGuard`. Grid cell cache (`buildCellCache`) groups + pre-merges nearby polygons.
+- **5 IndexedDB stores**: `fogPolygons`, `tracks`, `achievements`, `userLevel`, `stats`. Version `1` — no migration.
+- **Level system**: `XP = area_km2 * 10`, `level = floor(XP / 500) + 1`. 8 achievements checked on stats update.
+- **Init** has try-catch: errors shown via visible message inside `#map`. `window.db` and `window.map` exposed as debug globals.
+- `leaflet-draw` JS removed but its CSS still loaded from CDN (`index.html:8`).
+
+## UI Structure (Bottom Tab Navigation)
+
+- **3 fixed tabs** at bottom (`#tabBar`): Karte / Profil / Einstellungen. Tab switching via `switchTab('map'|'profile'|'settings')`.
+- **Tab 1 (Karte)**: transparent panel – map + FAB visible. FAB hidden on other tabs.
+- **Tab 2 (Profil)**: scrollable panel with stats (area, %, distance, tracks), level + XP bar, achievements list. Updated by `updateUI()`.
+- **Tab 3 (Einstellungen)**: scrollable panel with tracks toggle, GPX/KML/KMZ import, DB export/import, reset buttons. All inline – no modals.
+- **Header** (`#header`): only app title + locate button. Height 48px, sits above tabs.
+- **Map** (`#map`): fullscreen fixed, always behind tab panels.
+- **FAB** (`#fabTrack`): tracking start/stop, floats above map on Tab 1 only.
 
 ## GPS System
 
-- **GPS helper** `gpsStartWatch()` (`main.js:902-937`): Tries `@capacitor/geolocation` first (with `enableLocationFallback: true` for devices without Play Services), falls back to `navigator.geolocation.watchPosition()`.
-- **GPS one-shot** `gpsGetPosition()` (`main.js:878-900`): `@capacitor/geolocation.getCurrentPosition()` with fallback to `navigator.geolocation.getCurrentPosition()`. Used by `locateMe()` for immediate first fix.
-- **Blue dot** (`locateMe()`): first does a one-shot `gpsGetPosition()` (immediate marker + map center), then starts a continuous watch via `gpsStartWatch()`. Second click centers map on marker.
-- **Tracking** (`startTracking()` / `stopTracking()`): Separate GPS watch. Fog circles saved in real-time via `revealFogAtPoint()` (no stats update). On stop, union area calculated and stats updated once.
-- **FAB states**: `searching` (spinner, `.fab.searching`) → `tracking` (red pulse, `.fab.tracking`). Error recovery resets FAB to default.
-- **Permissions**: `@capacitor/geolocation` handles runtime permission requests. Android manifest has `ACCESS_FINE_LOCATION` + `ACCESS_COARSE_LOCATION`.
+- **One-shot** `gpsGetPosition` (`main.js:878-900`): tries `@capacitor/geolocation.getCurrentPosition()` first, falls back to `navigator.geolocation.getCurrentPosition()`.
+- **Continuous** `gpsStartWatch` (`main.js:903-937`): tries `Geolocation.watchPosition()` with `enableLocationFallback: true` (critical for devices without Play Services), falls back to `navigator.geolocation.watchPosition()`.
+- **Blue dot** (`locateMe()`): one-shot → marker + center map, then starts a watch. Second click centers map on marker. Blue dot added via `map.add()` directly, so `stopTracking()` does not clear it.
+- **Tracking** (`startTracking/stopTracking`): separate GPS watch. `onTrackingLocation` saves fog circles via `revealFogAtPoint()` (no live stats update). On stop: union area calculated, stats updated once, `gpsTrackLayer.clearLayers()`.
+- **FAB states**: `searching` (orange spinner) → `tracking` (red pulse). Error recovery resets to default.
 
-## Data Safety
+## Key Conventions
 
-- **`updateStats` mutex**: serializes concurrent stats writes to prevent race conditions.
-- **`onTrackingLocation`** is now `async` with `await` + try-catch around `revealFogAtPoint`.
-- **No stats during GPS**: `revealFogAtPoint()` only saves the fog circle. Stats update happens once on stop via `turf.union` area calculation.
-- **`onunhandledrejection` handler** logs all uncaught promise rejections.
-- **SW cache cleanup** on startup deletes old caches after APK update.
+- **All `onclick="fn()"` in HTML must be exposed on `window`**: every handler needs `window.fnName = fnName` in `main.js`. Exposed: `exportDatabase`, `handleFileImport`, `importDatabase`, `locateMe`, `resetAllData`, `resetFogOnly`, `resetTracksAndStats`, `switchTab`, `startTracking`, `stopTracking`, `toggleTracking`, `toggleTracks`.
+- **`updateStats` uses promise-chain mutex** to serialize concurrent writes (`main.js:410-446`).
 
-## Key conventions
+## F-Droid Publishing
 
-- **All HTML onclick handlers must be on `window`**: every `onclick="fn()"` in `index.html` needs `window.fnName = fnName` in `main.js`. Current exposed: `toggleSidebar`, `toggleBottomSheet`, `toggleDesktopSidebar`, `toggleTracking`, `showImportModal`, `closeImportModal`, `handleFileImport`, `locateMe`, `startTracking`, `stopTracking`, `showDBModal`, `closeDBModal`, `exportDatabase`, `importDatabase`, `showSettingsModal`, `closeSettingsModal`, `resetAllData`, `resetTracksAndStats`, `resetFogOnly`, `toggleTracks`.
-- **GPS markers in layer group**: tracking adds circle markers to `gpsTrackLayer` (`L.layerGroup`). Cleared on `stopTracking()`.
-- **Blue dot is NOT in a layer group**: added directly to map via `map.add()`, not cleared by stopTracking.
+### Änderungen für F-Droid-Konformität (bereits gemacht)
+
+1. **LICENSE** (MIT) im Projekt-Root
+2. **Keine CDN-Links mehr** – Leaflet CSS + Font Awesome werden via npm importiert und von Vite gebundled
+3. **Kein google-services-Fallback** in `build.gradle`
+4. **SPDX-Header** in `main.js`
+5. **`applicationId` = `com.openfog.online`** (matching namespace)
+6. **Unused deps entfernt** (`leaflet-draw`, `@mapbox/togeojson`, `gpx-parse`)
+
+### Fürs Haupt-F-Droid-Repository einreichen
+
+```bash
+# 1. Source auf GitHub/GitLab pushen
+git remote add origin https://github.com/DEIN_USER/OpenFog-Online.git
+git push -u origin main
+
+# 2. Metadata-PR auf gitlab.com/fdroid/fdroiddata erstellen
+#    Eine Datei anlegen unter: metadata/com.openfog.online.yml
+#    Inhalt:
+#    Categories: - Navigation
+#    License: MIT
+#    WebSite: https://github.com/DEIN_USER/OpenFog-Online
+#    SourceCode: https://github.com/DEIN_USER/OpenFog-Online
+#    IssueTracker: https://github.com/DEIN_USER/OpenFog-Online/issues
+#    AutoUpdateMode: Version
+#    UpdateCheckMode: Tags
+#    CurrentVersion: "1.0"
+#    CurrentVersionCode: 1
+
+# 3. F-Droid baut selbst – du musst nur taggen:
+git tag v1.0
+git push origin v1.0
+```
+
+### Eigenes F-Droid-Repo (einfacher)
+
+```bash
+# 1. fdroidserver installieren (Linux/macOS)
+sudo apt install fdroidserver
+
+# 2. Repo initialisieren
+mkdir ~/fdroid-repo && cd ~/fdroid-repo
+fdroid init
+
+# 3. APK ins Repo aufnehmen
+cp /pfad/zu/OpenFog.apk repo/
+fdroid update --create-metadata
+
+# 4. Signieren (einmalig)
+fdroid sign
+
+# 5. Repo index neu bauen
+fdroid update
+
+# 6. Hochladen (z.B. auf GitHub Pages)
+#    Den gesamten Ordner auf z.B. username.github.io/fdroid-repo/ hosten
+#    Auf dem Phone: Repo-URL hinzufügen in F-Droid → Einstellungen → Repos
+```
 
 ## Gotchas
 
-- **`REVEAL_RADIUS = 0.015` is in kilometers** (15m). Passed to Turf `buffer()` with `{units: 'kilometers'}`.
-- **No DB migration**: IndexedDB version is hardcoded `1` in `openDB('FogOfWorldDB', 1)`.
-- **Debug globals**: `window.db` and `window.map` are exposed after init.
-- **Map center**: Germany `[51.1657, 10.4515]` zoom 6.
-- **`saveFogPolygon` stores full `geometry` object** with `type`. Both `updateFogOverlay` and `updateRevealedTrail` handle `Polygon` and `MultiPolygon`. Old entries with only `coordinates` (no `geometry.type`) still supported via fallback.
-- **Union only for area**: Each 15m circle stored individually. `turf.union()` used only for exact area calculation, not for storage.
-- **Init has try-catch**: errors show visible message inside `#map` div.
-- **`minSdkVersion = 23`** (required by `@capacitor/geolocation`).
-- **Import/Export buttons** in header are visible on all screen sizes (not desktop-only).
-- **Leaflet zoom controls** remain (top-left). Drawing toolbar (`leaflet-draw`) was removed.
-- **JSZip is a static import** (not dynamic), bundled into main chunk to avoid SW cache hash mismatches.
+- `REVEAL_RADIUS = 0.015` is in **kilometers** (15m), passed to `turf.buffer()` `{units: 'kilometers'}`.
+- `saveFogPolygon` stores `geometry` object + legacy `coordinates`. Both `updateFogOverlay` and `updateRevealedTrail` handle `Polygon` and `MultiPolygon`.
+- `minSdkVersion = 23` (required by `@capacitor/geolocation`). Confirmed in `android/variables.gradle`.
+- SW cache cleanup on startup (`main.js:1169-1176`) deletes all caches except `osm-tiles` after APK update.
+- Unused deps: `gpx-parse`, `@mapbox/togeojson`, `leaflet-draw` (but its CSS is loaded from CDN).
+- `openfog/` is a standalone Android project copy with its own `package.json` / `node_modules` (Capacitor 5.x). `fog-of-world-web/` has Capacitor 8.x. APK is copied into `openfog/OpenFog.apk` after build.
+- `applicationId` = `com.openfog.online` (matching namespace `com.openfog.online`). This is F-Droid compatible.

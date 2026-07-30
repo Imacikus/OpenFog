@@ -1,7 +1,7 @@
 {
   "name": "fog-of-world-web",
   "version": "1.0.0",
-  "description": "Fog of World WebApp - Enthuelle die Weltkarte durch Reisen",
+  "description": "OpenFog - Enthuelle die Weltkarte durch Reisen",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -13,13 +13,11 @@
     "@capacitor/cli": "^6.2.1",
     "@capacitor/core": "^8.4.2",
     "@capacitor/geolocation": "^8.2.0",
-    "@mapbox/togeojson": "^0.16.0",
+    "@fortawesome/fontawesome-free": "^6.7.2",
     "@turf/turf": "^6.5.0",
-    "gpx-parse": "^0.10.2",
     "idb": "^7.1.1",
     "jszip": "^3.10.1",
-    "leaflet": "^1.9.4",
-    "leaflet-draw": "^1.0.4"
+    "leaflet": "^1.9.4"
   },
   "devDependencies": {
     "vite": "^4.5.0",

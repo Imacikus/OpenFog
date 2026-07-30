@@ -3,10 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Fog of World</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" />
+  <title>OpenFog</title>
   <link rel="manifest" href="/manifest.json">
   <style>
     /* ===== THEME ===== */
@@ -141,16 +138,6 @@
       transform: scale(0.92);
     }
 
-    /* ===== RESPONSIVE HELPERS ===== */
-    .mobile-only { display: flex !important; }
-    .desktop-only { display: none !important; }
-
-    @media (min-width: 768px) {
-      .mobile-only { display: none !important; }
-      .desktop-only { display: flex !important; }
-      #header { padding: 0 20px; }
-    }
-
     /* ===== FAB ===== */
     .fab {
       position: fixed;
@@ -171,7 +158,7 @@
       animation: popIn 0.4s var(--ease-out) 0.2s forwards;
       opacity: 0;
       transform: scale(0.5);
-      bottom: calc(88px + var(--safe-bottom));
+      bottom: calc(76px + var(--safe-bottom));
       right: 20px;
     }
 
@@ -196,131 +183,12 @@
       animation: pulse-ring 0.8s ease infinite;
     }
 
-    @media (min-width: 768px) {
-      .fab { bottom: calc(24px + var(--safe-bottom)); right: 24px; }
-    }
-
-    /* ===== BOTTOM SHEET ===== */
-    .bottom-sheet {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      z-index: 1000;
-      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-      border-bottom: none;
-      max-height: 68px;
-      transition: max-height 0.45s cubic-bezier(0.32, 0.72, 0, 1);
-      overflow: hidden;
-      padding-bottom: var(--safe-bottom);
-    }
-
-    .bottom-sheet.open {
-      max-height: min(70vh, 600px);
-    }
-
-    @media (min-width: 768px) {
-      .bottom-sheet { display: none; }
-    }
-
-    /* Handle */
-    .sheet-handle {
-      display: flex;
-      justify-content: center;
-      padding: 8px 0 0;
-    }
-
-    .handle-bar {
-      width: 36px;
-      height: 4px;
-      border-radius: 2px;
-      background: rgba(255,255,255,0.15);
-    }
-
-    /* Preview */
-    .sheet-preview {
-      display: flex;
-      align-items: center;
-      padding: 8px 20px 12px;
-      cursor: pointer;
-      gap: 12px;
-      user-select: none;
-    }
-
-    .sheet-preview-stat {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      min-width: 60px;
-    }
-
-    .stat-label {
-      font-size: 0.65rem;
-      color: var(--text-muted);
-      text-transform: uppercase;
-      letter-spacing: 0.5px;
-    }
-
-    .stat-value {
-      font-size: 1rem;
-      font-weight: 700;
-      color: var(--text-bright);
-    }
-
-    .sheet-preview-divider {
-      width: 1px;
-      height: 28px;
-      background: rgba(255,255,255,0.08);
-    }
-
-    .sheet-preview .sheet-xp {
-      flex: 1;
-      align-items: flex-start;
-    }
-
-    .sheet-preview progress {
-      width: 100%;
-      height: 4px;
-      border-radius: 2px;
-      margin-top: 8px;
-      -webkit-appearance: none;
-      appearance: none;
-    }
-
-    .sheet-preview progress::-webkit-progress-bar {
-      background: rgba(255,255,255,0.08);
-      border-radius: 2px;
-    }
-
-    .sheet-preview progress::-webkit-progress-value {
-      background: linear-gradient(90deg, var(--accent), #8b5cf6);
-      border-radius: 2px;
-    }
-
-    .sheet-preview-chevron {
-      color: var(--text-muted);
-      font-size: 0.8rem;
-      transition: transform 0.3s ease;
-    }
-
-    .bottom-sheet.open .sheet-preview-chevron {
-      transform: rotate(180deg);
-    }
-
-    /* Expanded content */
-    .sheet-content {
-      padding: 0 20px 24px;
-      padding-bottom: calc(24px + var(--safe-bottom));
-      max-height: calc(70vh - 68px);
-      overflow-y: auto;
-      -webkit-overflow-scrolling: touch;
-    }
-
-    .sheet-section {
+    /* ===== PANEL SECTION (shared) ===== */
+    .panel-section {
       margin-bottom: 20px;
     }
 
-    .sheet-section h3 {
+    .panel-section h3 {
       font-size: 0.8rem;
       color: var(--text-muted);
       margin-bottom: 12px;
@@ -328,9 +196,15 @@
       text-transform: uppercase;
     }
 
-    .sheet-section h3 i {
+    .panel-section h3 i {
       margin-right: 8px;
       color: var(--accent);
+    }
+
+    .panel-section p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
     }
 
     /* Stat rows */
@@ -405,25 +279,8 @@
       background: rgba(255,255,255,0.04);
       border-radius: var(--radius);
       border-left: 3px solid transparent;
-      opacity: 0;
-      transform: translateY(12px);
       transition: all 0.35s ease;
     }
-
-    .bottom-sheet.open .achievement-card,
-    .sidebar-desktop.open .achievement-card {
-      opacity: 1;
-      transform: none;
-    }
-
-    .bottom-sheet.open .achievement-card:nth-child(1) { transition-delay: 0.05s; }
-    .bottom-sheet.open .achievement-card:nth-child(2) { transition-delay: 0.10s; }
-    .bottom-sheet.open .achievement-card:nth-child(3) { transition-delay: 0.15s; }
-    .bottom-sheet.open .achievement-card:nth-child(4) { transition-delay: 0.20s; }
-    .bottom-sheet.open .achievement-card:nth-child(5) { transition-delay: 0.25s; }
-    .bottom-sheet.open .achievement-card:nth-child(6) { transition-delay: 0.30s; }
-    .bottom-sheet.open .achievement-card:nth-child(7) { transition-delay: 0.35s; }
-    .bottom-sheet.open .achievement-card:nth-child(8) { transition-delay: 0.40s; }
 
     .achievement-card.unlocked {
       border-left-color: var(--accent);
@@ -460,127 +317,6 @@
     .achievement-info p {
       font-size: 0.75rem;
       color: var(--text-muted);
-    }
-
-    /* ===== DESKTOP SIDEBAR ===== */
-    .sidebar-desktop {
-      display: none;
-    }
-
-    @media (min-width: 768px) {
-      .sidebar-desktop {
-        display: flex;
-        position: fixed;
-        left: 0;
-        top: 50%;
-        transform: translateY(-50%);
-        z-index: 1001;
-        border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
-        border-left: none;
-        width: 52px;
-        overflow: hidden;
-        transition: width 0.35s var(--ease-out);
-        cursor: pointer;
-        flex-direction: column;
-      }
-
-      .sidebar-desktop.open {
-        width: 260px;
-      }
-
-      .sidebar-icons {
-        display: flex;
-        flex-direction: column;
-        padding: 10px 8px;
-        gap: 6px;
-        min-width: 52px;
-      }
-
-      .sidebar-icon {
-        width: 36px;
-        height: 36px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        color: var(--text-muted);
-        border-radius: var(--radius);
-        transition: all 0.2s ease;
-        font-size: 1rem;
-        flex-shrink: 0;
-      }
-
-      .sidebar-icon:hover {
-        background: rgba(255,255,255,0.08);
-        color: var(--text-bright);
-      }
-
-      .sidebar-expanded {
-        display: none;
-        padding: 16px 16px 16px 4px;
-        min-width: 208px;
-        overflow-y: auto;
-        max-height: 75vh;
-      }
-
-      .sidebar-desktop.open .sidebar-expanded {
-        display: block;
-        animation: fadeSlideRight 0.35s ease forwards;
-      }
-    }
-
-    /* ===== MODALS ===== */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      z-index: 2000;
-      background: rgba(0, 0, 0, 0.7);
-      backdrop-filter: blur(4px);
-      -webkit-backdrop-filter: blur(4px);
-      align-items: center;
-      justify-content: center;
-    }
-
-    @supports not ((-webkit-backdrop-filter: blur(4px)) or (backdrop-filter: blur(4px))) {
-      .modal-overlay {
-        background: rgba(0, 0, 0, 0.85);
-      }
-    }
-
-    .modal-overlay.show {
-      display: flex;
-      animation: fadeIn 0.25s ease forwards;
-    }
-
-    .modal-content {
-      width: 88%;
-      max-width: 380px;
-      padding: 28px 24px;
-      border-radius: var(--radius-lg);
-      text-align: center;
-      transform: scale(0.92) translateY(16px);
-      transition: transform 0.3s var(--ease-out);
-    }
-
-    .modal-overlay.show .modal-content {
-      transform: scale(1) translateY(0);
-    }
-
-    .modal-content h2 {
-      font-size: 1.15rem;
-      color: var(--text-bright);
-      margin-bottom: 10px;
-    }
-
-    .modal-content h2 i {
-      color: var(--accent);
-      margin-right: 8px;
-    }
-
-    .modal-content p {
-      color: var(--text-muted);
-      font-size: 0.85rem;
-      margin-bottom: 20px;
     }
 
     .modal-btn {
@@ -685,42 +421,163 @@
       to   { opacity: 1; transform: scale(1); }
     }
 
-    @keyframes sheetSlideUp {
-      from { transform: translateY(calc(100% - 40px)); opacity: 0; }
-      to   { transform: translateY(calc(100% - 68px)); opacity: 1; }
-    }
-
     @keyframes pulse-ring {
       0%   { box-shadow: 0 0 0 0 var(--danger-glow); }
       70%  { box-shadow: 0 0 0 18px transparent; }
       100% { box-shadow: 0 0 0 0 transparent; }
     }
 
-    @keyframes fadeSlideRight {
-      from { opacity: 0; transform: translateX(-12px); }
-      to   { opacity: 1; transform: translateX(0); }
+    /* ===== TAB BAR ===== */
+    #tabBar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: calc(56px + var(--safe-bottom));
+      z-index: 1002;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      border-top: 1px solid var(--glass-border);
+      border-bottom: none;
+      padding-bottom: var(--safe-bottom);
     }
 
-    @keyframes fadeIn {
-      from { opacity: 0; }
-      to   { opacity: 1; }
+    .tab-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 6px 0;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.6rem;
+      cursor: pointer;
+      transition: color 0.2s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
     }
 
-    /* ===== SCROLLBAR ===== */
-    .sheet-content::-webkit-scrollbar,
-    .sidebar-expanded::-webkit-scrollbar {
+    .tab-btn i {
+      font-size: 1.15rem;
+      transition: transform 0.2s;
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+    }
+
+    .tab-btn.active i {
+      transform: scale(1.1);
+    }
+
+    /* ===== TAB PANELS ===== */
+    .tab-panel {
+      position: fixed;
+      top: 48px;
+      left: 0;
+      right: 0;
+      bottom: calc(56px + var(--safe-bottom));
+      z-index: 500;
+      display: none;
+      overflow: hidden;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .tab-panel-map {
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .tab-panel-content {
+      z-index: 1001;
+      -webkit-backdrop-filter: blur(16px) saturate(1.2);
+      backdrop-filter: blur(16px) saturate(1.2);
+      background: rgba(22, 33, 62, 0.94);
+    }
+
+    @supports not ((-webkit-backdrop-filter: blur(16px)) or (backdrop-filter: blur(16px))) {
+      .tab-panel-content {
+        background: rgba(22, 33, 62, 0.98);
+      }
+    }
+
+    .panel-scroll {
+      height: 100%;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 16px 20px 24px;
+    }
+
+    .panel-scroll::-webkit-scrollbar {
       width: 4px;
     }
 
-    .sheet-content::-webkit-scrollbar-track,
-    .sidebar-expanded::-webkit-scrollbar-track {
+    .panel-scroll::-webkit-scrollbar-track {
       background: transparent;
     }
 
-    .sheet-content::-webkit-scrollbar-thumb,
-    .sidebar-expanded::-webkit-scrollbar-thumb {
+    .panel-scroll::-webkit-scrollbar-thumb {
       background: rgba(255,255,255,0.1);
       border-radius: 2px;
+    }
+
+    /* ===== SETTINGS TOGGLE ===== */
+    .settings-row {
+      margin-bottom: 20px;
+    }
+
+    .settings-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 12px 0;
+      font-size: 0.9rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .settings-toggle span i {
+      margin-right: 8px;
+      color: var(--accent);
+    }
+
+    .settings-toggle input[type="checkbox"] {
+      appearance: none;
+      width: 40px;
+      height: 22px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 11px;
+      position: relative;
+      cursor: pointer;
+      transition: 0.2s;
+      flex-shrink: 0;
+    }
+
+    .settings-toggle input[type="checkbox"]::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: white;
+      transition: 0.2s;
+    }
+
+    .settings-toggle input[type="checkbox"]:checked {
+      background: var(--accent);
+    }
+
+    .settings-toggle input[type="checkbox"]:checked::after {
+      left: 20px;
     }
 
     /* ===== LEAFLET OVERRIDES ===== */
@@ -758,22 +615,10 @@
 <body>
   <!-- Header -->
   <div id="header" class="glass">
-    <span id="appTitle"><i class="fas fa-globe"></i> Fog of World</span>
+    <span id="appTitle"><i class="fas fa-globe"></i> OpenFog</span>
     <div class="header-actions">
       <button class="header-btn" onclick="locateMe()" title="Standort">
         <i class="fas fa-crosshairs"></i>
-      </button>
-      <button class="header-btn mobile-only" onclick="toggleSidebar()" title="Statistiken">
-        <i class="fas fa-chart-bar"></i>
-      </button>
-      <button class="header-btn" onclick="showImportModal()" title="Importieren">
-        <i class="fas fa-file-import"></i>
-      </button>
-      <button class="header-btn" onclick="showDBModal()" title="Daten">
-        <i class="fas fa-database"></i>
-      </button>
-      <button class="header-btn" onclick="showSettingsModal()" title="Einstellungen">
-        <i class="fas fa-cog"></i>
       </button>
     </div>
   </div>
@@ -786,141 +631,90 @@
     <i class="fas fa-map-marker-alt"></i>
   </button>
 
-  <!-- Bottom Sheet (mobile) -->
-  <div id="bottomSheet" class="bottom-sheet glass">
-    <div class="sheet-handle"><div class="handle-bar"></div></div>
-    <div class="sheet-preview" onclick="toggleBottomSheet()">
-      <div class="sheet-preview-stat">
-        <span class="stat-label">Enthüllt</span>
-        <span id="sheetRevealedArea" class="stat-value">0 km²</span>
-      </div>
-      <div class="sheet-preview-divider"></div>
-      <div class="sheet-preview-stat">
-        <span class="stat-label">Level</span>
-        <span id="sheetLevel" class="stat-value">1</span>
-      </div>
-      <div class="sheet-preview-stat sheet-xp">
-        <progress id="sheetXpProgress" value="0" max="500"></progress>
-      </div>
-      <div class="sheet-preview-chevron">
-        <i id="sheetChevron" class="fas fa-chevron-up"></i>
-      </div>
-    </div>
-    <div class="sheet-content">
-      <div class="sheet-section">
+  <!-- Tab Panels -->
+  <!-- Panel: Map (transparent, shows map behind) -->
+  <div id="panelMap" class="tab-panel tab-panel-map active"></div>
+
+  <!-- Panel: Profile -->
+  <div id="panelProfile" class="tab-panel tab-panel-content glass">
+    <div class="panel-scroll">
+      <div class="panel-section">
         <h3><i class="fas fa-map-marked-alt"></i> Enthüllte Fläche</h3>
-        <div class="stat-row"><span>Fläche</span><span id="sheetAreaFull">0 km²</span></div>
-        <div class="stat-row"><span>Prozent der Welt</span><span id="sheetPercentFull">0 %</span></div>
-        <div class="stat-row"><span>Distanz</span><span id="sheetDistance">0 km</span></div>
-        <div class="stat-row"><span>Tracks</span><span id="sheetTrackCount">0</span></div>
+        <div class="stat-row"><span>Fläche</span><span id="profileArea">0 km²</span></div>
+        <div class="stat-row"><span>Prozent der Welt</span><span id="profilePercent">0 %</span></div>
+        <div class="stat-row"><span>Distanz</span><span id="profileDistance">0 km</span></div>
+        <div class="stat-row"><span>Tracks</span><span id="profileTrackCount">0</span></div>
       </div>
-      <div class="sheet-section">
+      <div class="panel-section">
         <h3><i class="fas fa-level-up-alt"></i> Level</h3>
         <div class="level-display">
-          <span class="level-number" id="sheetLevelFull">1</span>
-          <div class="xp-bar"><div class="xp-bar-fill" id="sheetXpBarFill" style="width:0%"></div></div>
-          <span class="xp-text"><span id="sheetXPFull">0</span>&thinsp;/&thinsp;<span id="sheetNextXP">500</span> XP</span>
+          <span class="level-number" id="profileLevel">1</span>
+          <div class="xp-bar"><div class="xp-bar-fill" id="profileXpBarFill" style="width:0%"></div></div>
+          <span class="xp-text"><span id="profileXP">0</span>&thinsp;/&thinsp;<span id="profileNextXP">500</span> XP</span>
         </div>
       </div>
-      <div class="sheet-section">
+      <div class="panel-section">
         <h3><i class="fas fa-trophy"></i> Erfolge</h3>
-        <div id="sheetAchievementsList" class="achievements-list"></div>
+        <div id="profileAchievementsList" class="achievements-list"></div>
       </div>
     </div>
   </div>
 
-  <!-- Desktop Sidebar -->
-  <div id="sidebarDesktop" class="sidebar-desktop glass" onclick="toggleDesktopSidebar()">
-    <div class="sidebar-icons">
-      <div class="sidebar-icon" title="Statistiken"><i class="fas fa-chart-bar"></i></div>
-      <div class="sidebar-icon" title="Erfolge"><i class="fas fa-trophy"></i></div>
-      <div class="sidebar-icon" title="Importieren" onclick="event.stopPropagation(); showImportModal()"><i class="fas fa-file-import"></i></div>
-      <div class="sidebar-icon" title="Daten" onclick="event.stopPropagation(); showDBModal()"><i class="fas fa-database"></i></div>
-    </div>
-    <div class="sidebar-expanded">
-      <div class="sheet-section">
-        <h3><i class="fas fa-map-marked-alt"></i> Enthüllte Fläche</h3>
-        <div class="stat-row"><span>Fläche</span><span id="sbAreaFull">0 km²</span></div>
-        <div class="stat-row"><span>Prozent der Welt</span><span id="sbPercentFull">0 %</span></div>
-        <div class="stat-row"><span>Distanz</span><span id="sbDistance">0 km</span></div>
-        <div class="stat-row"><span>Tracks</span><span id="sbTrackCount">0</span></div>
+  <!-- Panel: Settings -->
+  <div id="panelSettings" class="tab-panel tab-panel-content glass">
+    <div class="panel-scroll">
+      <div class="settings-row">
+        <label class="settings-toggle">
+          <span><i class="fas fa-route"></i> Tracks anzeigen</span>
+          <input type="checkbox" id="toggleTracks" onchange="toggleTracks()">
+        </label>
       </div>
-      <div class="sheet-section">
-        <h3><i class="fas fa-level-up-alt"></i> Level</h3>
-        <div class="level-display">
-          <span class="level-number" id="sbLevelFull">1</span>
-          <div class="xp-bar"><div class="xp-bar-fill" id="sbXpBarFill" style="width:0%"></div></div>
-          <span class="xp-text"><span id="sbXPFull">0</span>&thinsp;/&thinsp;<span id="sbNextXP">500</span> XP</span>
+
+      <div class="panel-section">
+        <h3><i class="fas fa-file-import"></i> Track importieren</h3>
+        <p>GPX-, KML- oder KMZ-Datei auswählen</p>
+        <label for="fileInput" class="file-input-label"><i class="fas fa-folder-open"></i> Datei auswählen</label>
+        <input type="file" id="fileInput" accept=".gpx,.kml,.kmz" onchange="handleFileImport(event)">
+      </div>
+
+      <div class="panel-section">
+        <h3><i class="fas fa-database"></i> Daten sichern / wiederherstellen</h3>
+        <div class="modal-actions">
+          <button class="modal-btn modal-btn-primary" onclick="exportDatabase()"><i class="fas fa-download"></i> Export</button>
+          <label class="modal-btn modal-btn-success"><i class="fas fa-upload"></i> Import
+            <input type="file" id="dbFileInput" accept=".json" onchange="importDatabase(event)" style="display:none;">
+          </label>
         </div>
       </div>
-      <div class="sheet-section">
-        <h3><i class="fas fa-trophy"></i> Erfolge</h3>
-        <div id="sbAchievementsList" class="achievements-list"></div>
+
+      <div class="panel-section">
+        <h3><i class="fas fa-exclamation-triangle"></i> Daten zurücksetzen</h3>
+        <p style="font-size:0.8rem;color:var(--text-muted);">Nicht rückgängig machbar</p>
+        <div class="modal-actions">
+          <button class="modal-btn modal-btn-danger" onclick="resetAllData()"><i class="fas fa-trash-alt"></i> Alles zurücksetzen</button>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn modal-btn-danger" onclick="resetTracksAndStats()"><i class="fas fa-route"></i> Tracks + Statistik</button>
+          <button class="modal-btn modal-btn-danger" onclick="resetFogOnly()"><i class="fas fa-cloud"></i> Nur Nebel</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <!-- Import Modal -->
-  <div id="importModal" class="modal-overlay">
-    <div class="modal-content glass">
-      <h2><i class="fas fa-file-import"></i> Track importieren</h2>
-      <p>Wähle eine GPX-, KML- oder KMZ-Datei aus.</p>
-      <label for="fileInput" class="file-input-label"><i class="fas fa-folder-open"></i> Datei auswählen</label>
-      <input type="file" id="fileInput" accept=".gpx,.kml,.kmz" onchange="handleFileImport(event)">
-      <div class="modal-actions">
-        <button class="modal-btn modal-btn-secondary" onclick="closeImportModal()">Abbrechen</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- DB Modal -->
-  <div id="dbModal" class="modal-overlay">
-    <div class="modal-content glass">
-      <h2><i class="fas fa-database"></i> Daten sichern / wiederherstellen</h2>
-      <p>Alle Fog-Polygone, Tracks, Achievements, Level und Statistiken.</p>
-      <div class="modal-actions">
-        <button class="modal-btn modal-btn-primary" onclick="exportDatabase()"><i class="fas fa-download"></i> Export</button>
-        <label class="modal-btn modal-btn-success"><i class="fas fa-upload"></i> Import
-          <input type="file" id="dbFileInput" accept=".json" onchange="importDatabase(event)" style="display:none;">
-        </label>
-      </div>
-      <div class="modal-actions">
-        <button class="modal-btn modal-btn-secondary" onclick="closeDBModal()">Schließen</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Settings Modal -->
-  <div id="settingsModal" class="modal-overlay">
-    <div class="modal-content glass">
-      <h2><i class="fas fa-cog"></i> Einstellungen</h2>
-
-      <div style="margin-bottom:20px;">
-        <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:10px 0;font-size:0.9rem;border-bottom:1px solid rgba(255,255,255,0.06);">
-          <span><i class="fas fa-route" style="color:var(--accent);margin-right:8px;"></i>Tracks anzeigen</span>
-          <input type="checkbox" id="toggleTracks" onchange="toggleTracks()" style="appearance:none;width:40px;height:22px;background:rgba(255,255,255,0.15);border-radius:11px;position:relative;cursor:pointer;transition:0.2s;flex-shrink:0;">
-        </label>
-        <style>
-          #toggleTracks::after {
-            content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:white;transition:0.2s;
-          }
-          #toggleTracks:checked { background:var(--accent); }
-          #toggleTracks:checked::after { left:20px; }
-        </style>
-      </div>
-
-      <p style="margin-bottom:16px;font-size:0.8rem;color:var(--text-muted);"><i class="fas fa-exclamation-triangle"></i> Daten zurücksetzen – nicht rückgängig machbar</p>
-      <div class="modal-actions">
-        <button class="modal-btn modal-btn-danger" onclick="resetAllData()"><i class="fas fa-trash-alt"></i> Alles zurücksetzen</button>
-      </div>
-      <div class="modal-actions">
-        <button class="modal-btn modal-btn-danger" onclick="resetTracksAndStats()"><i class="fas fa-route"></i> Tracks + Statistik</button>
-        <button class="modal-btn modal-btn-danger" onclick="resetFogOnly()"><i class="fas fa-cloud"></i> Nur Nebel</button>
-      </div>
-      <div class="modal-actions" style="margin-top:20px;">
-        <button class="modal-btn modal-btn-secondary" onclick="closeSettingsModal()">Schließen</button>
-      </div>
-    </div>
+  <!-- Tab Bar -->
+  <div id="tabBar" class="tab-bar glass">
+    <button class="tab-btn active" onclick="switchTab('map')" title="Karte">
+      <i class="fas fa-map"></i>
+      <span>Karte</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('profile')" title="Profil">
+      <i class="fas fa-user"></i>
+      <span>Profil</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('settings')" title="Einstellungen">
+      <i class="fas fa-cog"></i>
+      <span>Einstellungen</span>
+    </button>
   </div>
 
   <script type="module" src="/src/main.js"></script>

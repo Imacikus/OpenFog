@@ -1,0 +1,5 @@
+{
+  "appId": "com.openfog",
+  "appName": "OpenFog",
+  "webDir": "../fog-of-world-web/dist"
+}

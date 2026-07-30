@@ -12,8 +12,8 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'Fog of World',
-        short_name: 'FoW',
+        name: 'OpenFog',
+        short_name: 'OpenFog',
         description: 'Enthülle die Weltkarte durch Reisen',
         theme_color: '#4a90e2',
         background_color: '#ffffff',

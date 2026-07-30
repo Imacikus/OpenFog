@@ -1,4 +1,7 @@
-// Fog of World WebApp - Hauptdatei
+// SPDX-License-Identifier: MIT
+// OpenFog - Enthülle die Weltkarte durch Reisen
+import 'leaflet/dist/leaflet.css';
+import '@fortawesome/fontawesome-free/css/all.min.css';
 import L from 'leaflet';
 import { openDB } from 'idb';
 import * as turf from '@turf/turf';
@@ -548,42 +551,23 @@ async function updateUI() {
     const d = fmtDist(stats.totalDistance);
     const tc = stats.trackCount || 0;
     
-    // Bottom Sheet
-    document.getElementById('sheetRevealedArea').textContent = a;
-    document.getElementById('sheetAreaFull').textContent = a;
-    document.getElementById('sheetPercentFull').textContent = p;
-    document.getElementById('sheetDistance').textContent = d;
-    document.getElementById('sheetTrackCount').textContent = tc;
-    
-    // Sidebar
-    document.getElementById('sbAreaFull').textContent = a;
-    document.getElementById('sbPercentFull').textContent = p;
-    document.getElementById('sbDistance').textContent = d;
-    document.getElementById('sbTrackCount').textContent = tc;
+    document.getElementById('profileArea').textContent = a;
+    document.getElementById('profilePercent').textContent = p;
+    document.getElementById('profileDistance').textContent = d;
+    document.getElementById('profileTrackCount').textContent = tc;
   }
   
   if (level) {
     const xpInLevel = level.xp % XP_PER_LEVEL;
     const pct = (xpInLevel / XP_PER_LEVEL) * 100;
     
-    // Bottom Sheet Preview
-    document.getElementById('sheetLevel').textContent = level.currentLevel;
-    document.getElementById('sheetXpProgress').value = xpInLevel;
-    
-    // Bottom Sheet Expanded
-    document.getElementById('sheetLevelFull').textContent = level.currentLevel;
-    document.getElementById('sheetXpBarFill').style.width = `${pct}%`;
-    document.getElementById('sheetXPFull').textContent = Math.floor(level.xp);
-    document.getElementById('sheetNextXP').textContent = level.xpForNextLevel;
-    
-    // Sidebar
-    document.getElementById('sbLevelFull').textContent = level.currentLevel;
-    document.getElementById('sbXpBarFill').style.width = `${pct}%`;
-    document.getElementById('sbXPFull').textContent = Math.floor(level.xp);
-    document.getElementById('sbNextXP').textContent = level.xpForNextLevel;
+    document.getElementById('profileLevel').textContent = level.currentLevel;
+    document.getElementById('profileXpBarFill').style.width = `${pct}%`;
+    document.getElementById('profileXP').textContent = Math.floor(level.xp);
+    document.getElementById('profileNextXP').textContent = level.xpForNextLevel;
   }
   
-  // Achievements (beide Container)
+  // Achievements
   const html = achievements
     .sort((a, b) => a.unlocked === b.unlocked ? 0 : a.unlocked ? -1 : 1)
     .map(a => `
@@ -597,47 +581,26 @@ async function updateUI() {
     `)
     .join('');
   
-  document.getElementById('sheetAchievementsList').innerHTML = html;
-  document.getElementById('sbAchievementsList').innerHTML = html;
+  document.getElementById('profileAchievementsList').innerHTML = html;
 }
 
 // ==================== EXPORT FÜR HTML-ONCLICK ====================
 // Module-Script-Funktionen sind nicht global sichtbar — daher explizit auf window heben
 
-function toggleSidebar() {
-  if (window.innerWidth < 768) {
-    toggleBottomSheet();
-  } else {
-    toggleDesktopSidebar();
-  }
+function switchTab(tab) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel' + tab.charAt(0).toUpperCase() + tab.slice(1)).classList.add('active');
+  document.querySelector(`.tab-btn[onclick*="'${tab}'"]`).classList.add('active');
+  const fab = document.getElementById('fabTrack');
+  if (tab === 'map') { fab.style.display = 'flex'; } else { fab.style.display = 'none'; }
 }
-window.toggleSidebar = toggleSidebar;
-
-function toggleBottomSheet() {
-  document.getElementById('bottomSheet').classList.toggle('open');
-}
-window.toggleBottomSheet = toggleBottomSheet;
-
-function toggleDesktopSidebar() {
-  document.getElementById('sidebarDesktop').classList.toggle('open');
-}
-window.toggleDesktopSidebar = toggleDesktopSidebar;
+window.switchTab = switchTab;
 
 function toggleTracking() {
   if (isTracking) { stopTracking(); } else { startTracking(); }
 }
 window.toggleTracking = toggleTracking;
-
-function showImportModal() {
-  document.getElementById('importModal').classList.add('show');
-}
-window.showImportModal = showImportModal;
-
-function closeImportModal() {
-  document.getElementById('importModal').classList.remove('show');
-  document.getElementById('fileInput').value = '';
-}
-window.closeImportModal = closeImportModal;
 
 // ==================== GPX/KML-IMPORT ====================
 async function handleFileImport(event) {
@@ -678,7 +641,7 @@ async function handleFileImport(event) {
     console.error('Fehler beim Import:', error);
     alert('Fehler beim Import: ' + error.message);
   } finally {
-    closeImportModal();
+    document.getElementById('fileInput').value = '';
   }
 }
 window.handleFileImport = handleFileImport;
@@ -806,12 +769,6 @@ function drawTrackOnMap(track) {
 // ==================== DATENBANK-BACKUP ====================
 const DB_STORES = ['fogPolygons', 'tracks', 'achievements', 'userLevel', 'stats'];
 
-function showDBModal() { document.getElementById('dbModal').classList.add('show'); }
-window.showDBModal = showDBModal;
-
-function closeDBModal() { document.getElementById('dbModal').classList.remove('show'); document.getElementById('dbFileInput').value = ''; }
-window.closeDBModal = closeDBModal;
-
 async function exportDatabase() {
   if (!db) { alert('Datenbank noch nicht bereit.'); return; }
   try {
@@ -843,7 +800,7 @@ async function importDatabase(event) {
     const backup = JSON.parse(text);
     if (!backup._version) { alert('Keine gültige Backup-Datei.'); return; }
 
-    if (!confirm('Existierende Daten werden überschrieben. Fortfahren?')) { closeDBModal(); return; }
+    if (!confirm('Existierende Daten werden überschrieben. Fortfahren?')) { document.getElementById('dbFileInput').value = ''; return; }
 
     const tx = db.transaction(DB_STORES, 'readwrite');
     for (const store of DB_STORES) {
@@ -856,7 +813,7 @@ async function importDatabase(event) {
     }
     await tx.done;
 
-    closeDBModal();
+    document.getElementById('dbFileInput').value = '';
     invalidateFogCache();
     await loadAndRefresh();
     alert('Daten erfolgreich wiederhergestellt!');
@@ -1136,17 +1093,7 @@ async function stopTracking() {
 window.startTracking = startTracking;
 window.stopTracking = stopTracking;
 
-// ==================== EINSTELLUNGEN ====================
-function showSettingsModal() {
-  document.getElementById('settingsModal').classList.add('show');
-}
-window.showSettingsModal = showSettingsModal;
-
-function closeSettingsModal() {
-  document.getElementById('settingsModal').classList.remove('show');
-}
-window.closeSettingsModal = closeSettingsModal;
-
+// ==================== DATEN ZURÜCKSETZEN ====================
 async function resetAllData() {
   if (!confirm('WIRKLICH alles zurücksetzen? Fog, Tracks, Achievements, Level und Statistiken werden gelöscht.')) return;
   await clearStore('fogPolygons');
@@ -1157,7 +1104,6 @@ async function resetAllData() {
   await initDefaultData();
   invalidateFogCache();
   tracksLayer.clearLayers();
-  closeSettingsModal();
   await loadAndRefresh();
   alert('Alle Daten wurden zurückgesetzt.');
 }
@@ -1171,7 +1117,6 @@ async function resetTracksAndStats() {
   await clearStore('stats');
   await initDefaultData();
   tracksLayer.clearLayers();
-  closeSettingsModal();
   await loadAndRefresh();
   alert('Tracks und Statistik zurückgesetzt.');
 }
@@ -1181,7 +1126,6 @@ async function resetFogOnly() {
   if (!confirm('Gesamten Nebel zurücksetzen? Alle enthüllten Flächen werden gelöscht.')) return;
   await clearStore('fogPolygons');
   invalidateFogCache();
-  closeSettingsModal();
   await loadAndRefresh();
   alert('Nebel zurückgesetzt.');
 }

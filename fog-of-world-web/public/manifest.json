@@ -1,6 +1,6 @@
 {
-  "name": "Fog of World",
-  "short_name": "FoW",
+  "name": "OpenFog",
+  "short_name": "OpenFog",
   "description": "Enthülle die Weltkarte durch Reisen - ein Real-Life-Spiel",
   "start_url": "/",
   "display": "standalone",
