@@ -8,20 +8,6 @@ SourceCode: https://github.com/Imacikus/OpenFog
 IssueTracker: https://github.com/Imacikus/OpenFog/issues
 
 AutoName: OpenFog
-Summary: Reveal the world map by traveling
-Description: |
-  OpenFog is an open-source map exploration app. The world map starts
-  hidden under a fog layer and is gradually revealed as you travel.
-  Features GPS tracking, GPX/KML/KMZ import, achievements, and a
-  leveling system.
-
-  Features:
-  - GPS tracking to reveal areas in real-time
-  - Import GPX, KML, or KMZ track files
-  - Level and XP system based on revealed area
-  - 8 achievements to unlock
-  - Full offline support via PWA service worker
-  - No ads, no tracking, no analytics
 
 RepoType: git
 Repo: https://github.com/Imacikus/OpenFog
@@ -29,8 +15,8 @@ Repo: https://github.com/Imacikus/OpenFog
 Builds:
   - versionName: 1.0.0
     versionCode: 1
-    commit: v1.0.0
-    subdir: fog-of-world-web/android
+    commit: ac37c2b
+    subdir: openfog/android
     gradle:
       - yes
 

@@ -1,0 +1,9 @@
+OpenFog is an open-source map exploration app. The world map starts hidden under a fog layer and is gradually revealed as you travel. Features GPS tracking, GPX/KML/KMZ import, achievements, and a leveling system.
+
+Features:
+- GPS tracking to reveal areas in real-time
+- Import GPX, KML, or KMZ track files
+- Level and XP system based on revealed area
+- 8 achievements to unlock
+- Full offline support via PWA service worker
+- No ads, no tracking, no analytics
