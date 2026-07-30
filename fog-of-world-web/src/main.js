@@ -168,6 +168,12 @@ async function initStats() {
   await tx.done;
 }
 
+async function initDefaultData() {
+  await initAchievements();
+  await initUserLevel();
+  await initStats();
+}
+
 // ==================== KARTEN-INITIALISIERUNG ====================
 let map;
 let fogLayer;
@@ -177,6 +183,7 @@ let drawnItems;
 let currentTrack = { points: [] };
 let isTracking = false;
 let watchId = null;
+let showTracks = false;
 
 async function initMap() {
   // L global verfügbar machen für Leaflet-Plugins (leaflet-draw u.a.)
@@ -197,7 +204,7 @@ async function initMap() {
   }).addTo(map);
 
   fogLayer = L.layerGroup().addTo(map);
-  tracksLayer = L.layerGroup().addTo(map);
+  tracksLayer = L.layerGroup(); // erstmal unsichtbar
   gpsTrackLayer = L.layerGroup().addTo(map);
 
   drawnItems = new L.FeatureGroup();
@@ -226,20 +233,27 @@ async function initMap() {
     });
   }
 
-  // Fog bei Bewegung neu berechnen (Viewport-basiert)
-  map.on('moveend', () => updateFogOverlay());
+  // Fog bei Bewegung neu berechnen (debounced, damit schnelles Schwenken nicht blockiert)
+  let fogTimer;
+  map.on('moveend', () => {
+    clearTimeout(fogTimer);
+    fogTimer = setTimeout(() => updateFogOverlay(), 300);
+  });
 }
 
 // ==================== FOG OVERLAY ====================
 let fogOverlayLayer = null;
 let fogUpdateGuard = false;
+let cachedCells = null; // Array von { polygon, cellX, cellY } – vereinfachte Grid-Zellen
+
+function invalidateFogCache() { cachedCells = null; }
 
 function makeFogStyle() {
   return { color: '#1a1a2e', weight: 0, fillColor: '#1a1a2e', fillOpacity: 0.85, interactive: false };
 }
 
 function buildFogBounds() {
-  const b = map.getBounds().pad(3);
+  const b = map.getBounds().pad(1.5);
   return turf.bboxPolygon([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
 }
 
@@ -248,43 +262,77 @@ function geoToTurf(p) {
   return g.type === 'MultiPolygon' ? turf.multiPolygon(g.coordinates) : turf.polygon(g.coordinates);
 }
 
+async function buildCellCache() {
+  const polygons = await db.getAll('fogPolygons');
+  if (polygons.length === 0) { cachedCells = []; return; }
+
+  const grid = new Map();
+  for (const p of polygons) {
+    const poly = geoToTurf(p);
+    if (!poly) continue;
+    const c = poly.geometry.coordinates[0][0];
+    const key = `${Math.round(c[0] * 1000)},${Math.round(c[1] * 1000)}`;
+    if (!grid.has(key)) grid.set(key, []);
+    grid.get(key).push(poly);
+  }
+
+  cachedCells = [];
+  for (const [, group] of grid) {
+    let merged = null;
+    for (const poly of group) {
+      if (!merged) { merged = poly; continue; }
+      try { const m = turf.union(merged, poly); if (m) merged = m; } catch (_) {}
+    }
+    if (!merged) continue;
+    try {
+      const s = turf.simplify(merged, { tolerance: 0.00001, highQuality: true });
+      if (s) merged = s;
+    } catch (_) {}
+
+    const c = merged.geometry.coordinates[0][0];
+    cachedCells.push({ polygon: merged, cellX: c[0], cellY: c[1] });
+  }
+
+  console.log(`[CACHE] ${polygons.length} → ${cachedCells.length} Zellen`);
+}
+
 async function updateFogOverlay() {
   if (!map || fogUpdateGuard) return;
   fogUpdateGuard = true;
+  const t0 = performance.now();
   try {
     if (fogOverlayLayer) map.removeLayer(fogOverlayLayer);
     fogOverlayLayer = null;
 
-    const polygons = await db.getAll('fogPolygons');
-    const fogRect = buildFogBounds();
+    if (!cachedCells) await buildCellCache();
 
-    if (polygons.length === 0) {
+    const fogRect = buildFogBounds();
+    const fc = fogRect.geometry.coordinates[0];
+    const fWest = fc[0][0], fSouth = fc[0][1], fEast = fc[2][0], fNorth = fc[2][1];
+
+    if (cachedCells.length === 0) {
       fogOverlayLayer = L.geoJSON(fogRect, makeFogStyle()).addTo(map);
       return;
     }
 
-    // Alle enthüllten Polygone zu EINER Fläche vereinen
-    let revealed = null;
-    for (const p of polygons) {
-      const poly = geoToTurf(p);
-      if (!poly) continue;
-      if (!revealed) { revealed = poly; continue; }
+    let currentFog = fogRect;
+    let cellCount = 0;
+    for (const cell of cachedCells) {
+      if (cell.cellX > fEast || cell.cellX < fWest || cell.cellY > fNorth || cell.cellY < fSouth) continue;
+      if (!turf.booleanIntersects(currentFog, cell.polygon)) continue;
       try {
-        const m = turf.union(revealed, poly);
-        if (m) revealed = m;
+        const diff = turf.difference(currentFog, cell.polygon);
+        if (diff) { currentFog = diff; cellCount++; }
       } catch (_) {}
     }
 
-    // Nebel = Viewport-Rechteck minus enthüllte Fläche
-    const fog = turf.difference(fogRect, revealed);
-    if (fog) {
-      fogOverlayLayer = L.geoJSON(fog, makeFogStyle()).addTo(map);
-    } else {
-      fogOverlayLayer = L.geoJSON(fogRect, makeFogStyle()).addTo(map);
-    }
+    const elapsed = (performance.now() - t0).toFixed(1);
+    console.log(`[FOG] ${cachedCells.length} Zellen, ${cellCount} diffs (${elapsed}ms)`);
+
+    fogOverlayLayer = L.geoJSON(currentFog, makeFogStyle()).addTo(map);
   } catch (e) {
-    console.warn('Fog-Overlay-Fehler:', e);
-    fogOverlayLayer = L.geoJSON(fogRect, makeFogStyle()).addTo(map);
+    console.warn('[FOG] Overlay-Fehler:', e);
+    fogOverlayLayer = L.geoJSON(buildFogBounds(), makeFogStyle()).addTo(map);
   } finally {
     fogUpdateGuard = false;
   }
@@ -303,7 +351,6 @@ function updateRevealedTrail() {
 }
 
 async function refreshDisplay() {
-  updateRevealedTrail();
   await updateFogOverlay();
 }
 
@@ -367,6 +414,7 @@ async function getAllTracks() {
 // ==================== NEBEL-ENTHÜLLUNG ====================
 async function revealFogAlongTrack(track) {
   let unionPolygon = null;
+  let saved = 0;
   
   for (const point of track.points) {
     const circle = turf.buffer(
@@ -377,6 +425,7 @@ async function revealFogAlongTrack(track) {
     if (!circle) continue;
 
     await saveFogPolygon(circle);
+    saved++;
 
     if (!unionPolygon) {
       unionPolygon = circle;
@@ -388,9 +437,15 @@ async function revealFogAlongTrack(track) {
     }
   }
   
+  invalidateFogCache();
+  console.log(`[REVEAL] ${saved} Kreise gespeichert für "${track.name}" (${track.points.length} Punkte)`);
+  
   if (unionPolygon) {
     const area = turf.area(unionPolygon) / 1000000;
+    console.log(`[REVEAL] Union-Fläche: ${area.toFixed(6)} km²`);
     await updateStats(area, track.metadata.distance / 1000);
+  } else {
+    console.warn('[REVEAL] unionPolygon ist null – keine Fläche berechnet');
   }
   
   await refreshDisplay();
@@ -661,6 +716,8 @@ async function handleFileImport(event) {
       return;
     }
     
+    console.log(`[IMPORT] "${file.name}" gelesen: ${trackData.points.length} Punkte, ${(trackData.metadata.distance / 1000).toFixed(1)} km`);
+    
     // Speichere Track
     await saveTrack(trackData);
     
@@ -724,32 +781,43 @@ async function parseGPXFile(content) {
 }
 
 async function parseKMLFile(content) {
-  // Parsen der KML-Datei
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(content, 'text/xml');
   
-  // Extrahiere Track-Punkte
   const points = [];
   const trackName = xmlDoc.querySelector('name')?.textContent || `Track ${Date.now()}`;
   
-  const coordinates = xmlDoc.querySelector('coordinates');
-  if (coordinates) {
-    const coordsText = coordinates.textContent.trim();
-    const coords = coordsText.split('\n').map(c => c.trim()).filter(c => c);
-    
-    coords.forEach(c => {
-      const [lng, lat] = c.split(',').map(parseFloat);
+  // Variante A: <coordinates> (LineString/LinearRing)
+  const coordEls = xmlDoc.querySelectorAll('coordinates');
+  if (coordEls.length) {
+    coordEls.forEach(el => {
+      el.textContent.trim().split(/\s+/).forEach(block => {
+        const parts = block.trim().split(',');
+        const lng = parseFloat(parts[0]);
+        const lat = parseFloat(parts[1]);
+        if (!isNaN(lng) && !isNaN(lat)) {
+          points.push({ lat, lng, timestamp: Date.now() });
+        }
+      });
+    });
+  }
+  
+  // Variante B: <gx:Track> / <gx:coord>
+  const gxCoords = xmlDoc.querySelectorAll('gx\\:coord, coord');
+  if (gxCoords.length) {
+    gxCoords.forEach(el => {
+      const parts = el.textContent.trim().split(/\s+/);
+      const lng = parseFloat(parts[0]);
+      const lat = parseFloat(parts[1]);
       if (!isNaN(lng) && !isNaN(lat)) {
-        points.push({
-          lat,
-          lng,
-          timestamp: Date.now()
-        });
+        const when = el.previousElementSibling?.textContent?.trim?.();
+        points.push({ lat, lng, timestamp: when ? new Date(when).getTime() : Date.now() });
       }
     });
   }
   
-  // Berechne Distanz
+  console.log(`[KML] "${trackName}": ${coordEls.length} <coordinates>, ${gxCoords.length} <gx:coord> → ${points.length} Punkte`);
+  
   const distance = calculateTrackDistance(points);
   
   return {
@@ -759,8 +827,8 @@ async function parseKMLFile(content) {
     color: getRandomColor(),
     width: 3,
     metadata: {
-      startTime: Date.now(),
-      endTime: Date.now(),
+      startTime: points[0]?.timestamp || Date.now(),
+      endTime: points[points.length - 1]?.timestamp || Date.now(),
       distance,
       source: 'kml'
     }
@@ -770,8 +838,11 @@ async function parseKMLFile(content) {
 async function parseKMZFile(file) {
   const JSZip = await import('jszip').then(m => m.default);
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
-  const kmlFile = Object.keys(zip.files).find(f => f.endsWith('.kml'));
+  const fileList = Object.keys(zip.files);
+  console.log('[KMZ] Dateien im Archiv:', fileList);
+  const kmlFile = fileList.find(f => f.endsWith('.kml'));
   if (!kmlFile) throw new Error('Keine KML-Datei im KMZ-Archiv gefunden.');
+  console.log(`[KMZ] Gefundene KML: "${kmlFile}"`);
   const content = await zip.files[kmlFile].async('text');
   return parseKMLFile(content);
 }
@@ -844,6 +915,7 @@ async function importDatabase(event) {
     await tx.done;
 
     closeDBModal();
+    invalidateFogCache();
     await loadAndRefresh();
     alert('Daten erfolgreich wiederhergestellt!');
   } catch (e) {
@@ -941,6 +1013,7 @@ async function revealFogAtPoint(lat, lng) {
   if (!circle) return;
   
   await saveFogPolygon(circle);
+  invalidateFogCache();
   
   // Aktualisiere Statistiken (15m Radius = ~0.0007 km²)
   const area = Math.PI * REVEAL_RADIUS * REVEAL_RADIUS;
@@ -990,6 +1063,75 @@ async function stopTracking() {
 }
 window.startTracking = startTracking;
 window.stopTracking = stopTracking;
+
+// ==================== EINSTELLUNGEN ====================
+function showSettingsModal() {
+  document.getElementById('settingsModal').classList.add('show');
+}
+window.showSettingsModal = showSettingsModal;
+
+function closeSettingsModal() {
+  document.getElementById('settingsModal').classList.remove('show');
+}
+window.closeSettingsModal = closeSettingsModal;
+
+async function resetAllData() {
+  if (!confirm('WIRKLICH alles zurücksetzen? Fog, Tracks, Achievements, Level und Statistiken werden gelöscht.')) return;
+  await clearStore('fogPolygons');
+  await clearStore('tracks');
+  await clearStore('achievements');
+  await clearStore('userLevel');
+  await clearStore('stats');
+  await initDefaultData();
+  invalidateFogCache();
+  tracksLayer.clearLayers();
+  closeSettingsModal();
+  await loadAndRefresh();
+  alert('Alle Daten wurden zurückgesetzt.');
+}
+window.resetAllData = resetAllData;
+
+async function resetTracksAndStats() {
+  if (!confirm('Tracks, Achievements, Level und Statistiken zurücksetzen? Der Nebel bleibt erhalten.')) return;
+  await clearStore('tracks');
+  await clearStore('achievements');
+  await clearStore('userLevel');
+  await clearStore('stats');
+  await initDefaultData();
+  tracksLayer.clearLayers();
+  closeSettingsModal();
+  await loadAndRefresh();
+  alert('Tracks und Statistik zurückgesetzt.');
+}
+window.resetTracksAndStats = resetTracksAndStats;
+
+async function resetFogOnly() {
+  if (!confirm('Gesamten Nebel zurücksetzen? Alle enthüllten Flächen werden gelöscht.')) return;
+  await clearStore('fogPolygons');
+  invalidateFogCache();
+  closeSettingsModal();
+  await loadAndRefresh();
+  alert('Nebel zurückgesetzt.');
+}
+window.resetFogOnly = resetFogOnly;
+
+async function clearStore(storeName) {
+  const tx = db.transaction(storeName, 'readwrite');
+  await tx.objectStore(storeName).clear();
+  await tx.done;
+}
+
+function toggleTracks() {
+  showTracks = !showTracks;
+  const checkbox = document.getElementById('toggleTracks');
+  if (checkbox) checkbox.checked = showTracks;
+  if (showTracks) {
+    map.addLayer(tracksLayer);
+  } else {
+    map.removeLayer(tracksLayer);
+  }
+}
+window.toggleTracks = toggleTracks;
 
 // ==================== INITIALISIERUNG ====================
 document.addEventListener('DOMContentLoaded', async () => {

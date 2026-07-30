@@ -594,6 +594,16 @@
       box-shadow: 0 2px 12px rgba(16, 185, 129, 0.3);
     }
 
+    .modal-btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+
+    .modal-btn-danger:hover {
+      background: #f87171;
+      box-shadow: 0 2px 12px var(--danger-glow);
+    }
+
     .file-input-label {
       display: inline-flex;
       align-items: center;
@@ -727,6 +737,9 @@
       <button class="header-btn desktop-only" onclick="showDBModal()" title="Daten">
         <i class="fas fa-database"></i>
       </button>
+      <button class="header-btn" onclick="showSettingsModal()" title="Einstellungen">
+        <i class="fas fa-cog"></i>
+      </button>
     </div>
   </div>
 
@@ -838,6 +851,39 @@
       </div>
       <div class="modal-actions">
         <button class="modal-btn modal-btn-secondary" onclick="closeDBModal()">Schließen</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settingsModal" class="modal-overlay">
+    <div class="modal-content glass">
+      <h2><i class="fas fa-cog"></i> Einstellungen</h2>
+
+      <div style="margin-bottom:20px;">
+        <label style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;padding:10px 0;font-size:0.9rem;border-bottom:1px solid rgba(255,255,255,0.06);">
+          <span><i class="fas fa-route" style="color:var(--accent);margin-right:8px;"></i>Tracks anzeigen</span>
+          <input type="checkbox" id="toggleTracks" onchange="toggleTracks()" style="appearance:none;width:40px;height:22px;background:rgba(255,255,255,0.15);border-radius:11px;position:relative;cursor:pointer;transition:0.2s;flex-shrink:0;">
+        </label>
+        <style>
+          #toggleTracks::after {
+            content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:white;transition:0.2s;
+          }
+          #toggleTracks:checked { background:var(--accent); }
+          #toggleTracks:checked::after { left:20px; }
+        </style>
+      </div>
+
+      <p style="margin-bottom:16px;font-size:0.8rem;color:var(--text-muted);"><i class="fas fa-exclamation-triangle"></i> Daten zurücksetzen – nicht rückgängig machbar</p>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-danger" onclick="resetAllData()"><i class="fas fa-trash-alt"></i> Alles zurücksetzen</button>
+      </div>
+      <div class="modal-actions">
+        <button class="modal-btn modal-btn-danger" onclick="resetTracksAndStats()"><i class="fas fa-route"></i> Tracks + Statistik</button>
+        <button class="modal-btn modal-btn-danger" onclick="resetFogOnly()"><i class="fas fa-cloud"></i> Nur Nebel</button>
+      </div>
+      <div class="modal-actions" style="margin-top:20px;">
+        <button class="modal-btn modal-btn-secondary" onclick="closeSettingsModal()">Schließen</button>
       </div>
     </div>
   </div>
