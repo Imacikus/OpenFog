@@ -2,6 +2,8 @@
 import L from 'leaflet';
 import { openDB } from 'idb';
 import * as turf from '@turf/turf';
+import { Geolocation } from '@capacitor/geolocation';
+import JSZip from 'jszip';
 
 // ==================== KONSTANTEN ====================
 const WORLD_TOTAL_AREA = 510072000; // km² (Gesamtfläche der Erde)
@@ -179,23 +181,12 @@ let map;
 let fogLayer;
 let tracksLayer;
 let gpsTrackLayer;
-let drawnItems;
 let currentTrack = { points: [] };
 let isTracking = false;
-let watchId = null;
 let showTracks = false;
 
 async function initMap() {
-  // L global verfügbar machen für Leaflet-Plugins (leaflet-draw u.a.)
   window.L = L;
-
-  // leaflet-draw dynamisch laden — static import scheitert bei CommonJS/UMD-Modulen im ESM-Kontext
-  try {
-    await import('leaflet-draw');
-  } catch (e) {
-    console.warn('leaflet-draw nicht geladen, Zeichenfunktion deaktiviert:', e);
-  }
-
   // Karte initialisieren
   map = L.map('map').setView([51.1657, 10.4515], 6);
 
@@ -206,32 +197,6 @@ async function initMap() {
   fogLayer = L.layerGroup().addTo(map);
   tracksLayer = L.layerGroup(); // erstmal unsichtbar
   gpsTrackLayer = L.layerGroup().addTo(map);
-
-  drawnItems = new L.FeatureGroup();
-  map.addLayer(drawnItems);
-
-  if (L.Control.Draw) {
-    const drawControl = new L.Control.Draw({
-      edit: { featureGroup: drawnItems },
-      draw: {
-        polyline: true,
-        polygon: false,
-        rectangle: false,
-        circle: false,
-        marker: false
-      }
-    });
-    map.addControl(drawControl);
-
-    map.on(L.Draw.Event.CREATED, async (e) => {
-      const layer = e.layer;
-      drawnItems.addLayer(layer);
-      const track = convertLeafletLayerToTrack(layer);
-      await saveTrack(track);
-      await revealFogAlongTrack(track);
-      await updateUI();
-    });
-  }
 
   // Fog bei Bewegung neu berechnen (debounced, damit schnelles Schwenken nicht blockiert)
   let fogTimer;
@@ -355,35 +320,6 @@ async function refreshDisplay() {
 }
 
 // ==================== TRACK-FUNKTIONEN ====================
-function convertLeafletLayerToTrack(layer) {
-  const points = [];
-  
-  if (layer instanceof L.Polyline) {
-    const latlngs = layer.getLatLngs();
-    latlngs.forEach(latlng => {
-      points.push({
-        lat: latlng.lat,
-        lng: latlng.lng,
-        timestamp: Date.now()
-      });
-    });
-  }
-  
-  return {
-    id: crypto.randomUUID(),
-    name: `Track ${Date.now()}`,
-    points,
-    color: '#3498db',
-    width: 3,
-    metadata: {
-      startTime: Date.now(),
-      endTime: Date.now(),
-      distance: calculateTrackDistance(points),
-      source: 'draw'
-    }
-  };
-}
-
 function calculateTrackDistance(points) {
   if (points.length < 2) return 0;
   
@@ -471,35 +407,42 @@ async function saveFogPolygon(polygon) {
 }
 
 // ==================== STATISTIKEN ====================
+let statsLock = Promise.resolve();
+
 async function updateStats(newArea, newDistance) {
-  const tx = db.transaction('stats', 'readwrite');
-  const store = tx.objectStore('stats');
-  
-  const stats = await store.get('main');
-  
-  const totalWorldArea = WORLD_TOTAL_AREA;
-  const newTotalArea = (stats.totalRevealedArea || 0) + newArea;
-  const newTotalDistance = (stats.totalDistance || 0) + newDistance;
-  const newPercent = (newTotalArea / totalWorldArea) * 100;
-  
-  await store.put({
-    ...stats,
-    totalRevealedArea: newTotalArea,
-    totalRevealedPercent: newPercent,
-    totalDistance: newTotalDistance,
-    lastUpdated: Date.now()
-  });
-  
-  await tx.done;
-  
-  // Aktualisiere Level
-  await updateLevel(newArea);
-  
-  // Prüfe Achievements
-  await checkAchievements();
-  
-  // Aktualisiere UI
-  await updateUI();
+  let release;
+  const wait = new Promise(r => release = r);
+  const prev = statsLock;
+  statsLock = wait;
+  await prev;
+
+  try {
+    const tx = db.transaction('stats', 'readwrite');
+    const store = tx.objectStore('stats');
+
+    const stats = await store.get('main');
+
+    const totalWorldArea = WORLD_TOTAL_AREA;
+    const newTotalArea = (stats.totalRevealedArea || 0) + newArea;
+    const newTotalDistance = (stats.totalDistance || 0) + newDistance;
+    const newPercent = (newTotalArea / totalWorldArea) * 100;
+
+    await store.put({
+      ...stats,
+      totalRevealedArea: newTotalArea,
+      totalRevealedPercent: newPercent,
+      totalDistance: newTotalDistance,
+      lastUpdated: Date.now()
+    });
+
+    await tx.done;
+
+    await updateLevel(newArea);
+    await checkAchievements();
+    await updateUI();
+  } finally {
+    release();
+  }
 }
 
 async function updateTrackCount() {
@@ -836,7 +779,6 @@ async function parseKMLFile(content) {
 }
 
 async function parseKMZFile(file) {
-  const JSZip = await import('jszip').then(m => m.default);
   const zip = await JSZip.loadAsync(await file.arrayBuffer());
   const fileList = Object.keys(zip.files);
   console.log('[KMZ] Dateien im Archiv:', fileList);
@@ -932,112 +874,230 @@ async function loadAndRefresh() {
   await updateUI();
 }
 
-// ==================== STANDORT-FUNKTIONEN ====================
-function locateMe() {
-  if (!map) { console.warn('Karte noch nicht initialisiert'); return; }
-  if (!navigator.geolocation) {
-    alert('Geolocation wird von deinem Browser nicht unterstützt.');
+// ==================== GPS-HELPER ====================
+async function gpsGetPosition(timeout) {
+  let cap = false;
+  try { cap = !!(window.Capacitor?.isNativePlatform?.()); } catch (_) {}
+
+  if (cap) {
+    try {
+      const p = await Geolocation.checkPermissions();
+      if (p.location === 'denied' || p.location === 'prompt') {
+        await Geolocation.requestPermissions();
+      }
+    } catch (_) {}
+
+    try {
+      return await Geolocation.getCurrentPosition({ enableHighAccuracy: true, timeout });
+    } catch (e) {
+      console.warn('Capacitor getCurrentPosition fehlgeschlagen:', e);
+    }
+  }
+  if (!navigator.geolocation) throw new Error('navigator.geolocation nicht verfügbar');
+  return new Promise((resolve, reject) =>
+    navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout, maximumAge: 0 })
+  );
+}
+
+// Versuche Capacitor Geolocation, fallback auf navigator.geolocation
+async function gpsStartWatch(opts, onPosition, onError) {
+  let cap = false;
+  try { cap = !!(window.Capacitor?.isNativePlatform?.()); } catch (_) {}
+
+  if (cap) {
+    try {
+      const p = await Geolocation.checkPermissions();
+      if (p.location === 'denied' || p.location === 'prompt') {
+        await Geolocation.requestPermissions();
+      }
+    } catch (_) {}
+
+    try {
+      const id = await Geolocation.watchPosition(
+        { enableHighAccuracy: opts.highAccuracy || false, timeout: opts.timeout || 30000, enableLocationFallback: true },
+        (pos, err) => {
+          if (err) { onError(err); return; }
+          onPosition(pos);
+        }
+      );
+      return { clear: () => { try { Geolocation.clearWatch({ id }); } catch (_) {} } };
+    } catch (e) {
+      console.warn('Capacitor Geolocation fehlgeschlagen, Fallback auf navigator.geolocation:', e);
+    }
+  }
+
+  if (!navigator.geolocation) throw new Error('navigator.geolocation nicht verfügbar');
+
+  const watchId = navigator.geolocation.watchPosition(
+    (pos) => onPosition(pos),
+    (err) => onError(err),
+    { enableHighAccuracy: opts.highAccuracy || false, timeout: opts.timeout || 30000, maximumAge: 30000 }
+  );
+  return { clear: () => navigator.geolocation.clearWatch(watchId) };
+}
+
+// ==================== STANDORT (Blauer Punkt) ====================
+let myLocationMarker = null;
+let myLocationWatcher = null;
+
+async function locateMe() {
+  if (!map) return;
+
+  if (myLocationWatcher && myLocationMarker) {
+    map.setView(myLocationMarker.getLatLng(), 16);
     return;
   }
-  const onLocationFound = (e) => {
-    L.circleMarker(e.latlng, { radius: 8, fillColor: '#3498db', color: '#fff', weight: 2, fillOpacity: 0.9 })
-      .addTo(map)
-      .bindPopup('Dein Standort')
-      .openPopup();
-    map.off('locationfound', onLocationFound);
-  };
-  map.on('locationfound', onLocationFound);
-  map.locate({ setView: true, maxZoom: 16 });
+
+  // 1. Sofort eine Position holen (Marker anzeigen + Karte zentrieren)
+  try {
+    const pos = await gpsGetPosition(15000);
+    const { latitude: lat, longitude: lng } = pos.coords;
+    if (!myLocationMarker) {
+      myLocationMarker = L.circleMarker([lat, lng], {
+        radius: 8,
+        fillColor: '#3498db',
+        color: '#ffffff',
+        weight: 2,
+        fillOpacity: 0.9
+      }).addTo(map);
+      map.setView([lat, lng], 16);
+    }
+  } catch (e) {
+    console.warn('Initiale Position fehlgeschlagen, starte Watch:', e);
+  }
+
+  // 2. Watch für kontinuierliche Aktualisierung
+  try {
+    myLocationWatcher = await gpsStartWatch(
+      { highAccuracy: true, timeout: 30000 },
+      (pos) => {
+        const { latitude: lat, longitude: lng } = pos.coords;
+        if (!myLocationMarker) {
+          myLocationMarker = L.circleMarker([lat, lng], {
+            radius: 8,
+            fillColor: '#3498db',
+            color: '#ffffff',
+            weight: 2,
+            fillOpacity: 0.9
+          }).addTo(map);
+          map.setView([lat, lng], 16);
+        } else {
+          myLocationMarker.setLatLng([lat, lng]);
+        }
+      },
+      (err) => console.warn('Standort-Fehler:', err.message || err.code || err)
+    );
+  } catch (e) {
+    if (!myLocationMarker) {
+      alert('GPS nicht verfügbar: ' + (e.message || e));
+    }
+  }
 }
 window.locateMe = locateMe;
 
 // ==================== LIVE-GPS-TRACKING ====================
-function startTracking() {
-  if (!map) { console.warn('Karte noch nicht initialisiert'); return; }
-  if (isTracking) return;
-  
-  if (!navigator.geolocation) {
-    alert('Geolocation wird von deinem Browser nicht unterstützt.');
-    return;
-  }
-  
+let trackingWatcher = null;
+let trackingFirstFix = true;
+
+async function startTracking() {
+  if (!map || isTracking) return;
+
   isTracking = true;
   currentTrack = { points: [] };
-  
-  document.getElementById('fabTrack').classList.add('tracking');
-  document.getElementById('fabTrack').innerHTML = '<i class="fas fa-stop"></i>';
-  document.getElementById('fabTrack').title = 'Tracking stoppen';
-  
-  watchId = navigator.geolocation.watchPosition(
-    (position) => {
-      const { latitude, longitude, accuracy } = position.coords;
-      
-      currentTrack.points.push({
-        lat: latitude,
-        lng: longitude,
-        timestamp: Date.now(),
-        accuracy
-      });
-      
-      // Zeichne Punkt auf der Karte
-      L.circleMarker([latitude, longitude], {
-        radius: 5,
-        fillColor: '#e74c3c',
-        color: '#e74c3c',
-        weight: 1,
-        opacity: 1,
-        fillOpacity: 0.8
-      }).addTo(gpsTrackLayer);
-      
-      // Enthülle Nebel um den aktuellen Punkt
-      revealFogAtPoint(latitude, longitude);
-    },
-    (error) => {
-      console.error('GPS-Fehler:', error);
-      alert('Fehler beim GPS-Tracking: ' + error.message);
-    },
-    {
-      enableHighAccuracy: true,
-      maximumAge: 0,
-      timeout: 10000
-    }
-  );
+  trackingFirstFix = true;
+
+  const fab = document.getElementById('fabTrack');
+  fab.classList.add('searching');
+  fab.innerHTML = '<i class="fas fa-spinner fa-pulse"></i>';
+  fab.title = 'Suche GPS-Signal...';
+
+  try {
+    trackingWatcher = await gpsStartWatch(
+      { highAccuracy: true, timeout: 60000 },
+      onTrackingLocation,
+      onTrackingError
+    );
+  } catch (e) {
+    console.error('Tracking-Start fehlgeschlagen:', e);
+    isTracking = false;
+    fab.classList.remove('searching');
+    fab.innerHTML = '<i class="fas fa-map-marker-alt"></i>';
+    fab.title = 'Tracking starten';
+    alert('GPS starten fehlgeschlagen: ' + (e.message || e));
+  }
+}
+
+async function onTrackingLocation(pos) {
+  const lat = pos.coords.latitude;
+  const lng = pos.coords.longitude;
+  const accuracy = pos.coords.accuracy || 0;
+
+  currentTrack.points.push({ lat, lng, timestamp: Date.now(), accuracy });
+
+  const marker = L.circleMarker([lat, lng], {
+    radius: 8,
+    fillColor: '#ef4444',
+    color: '#ffffff',
+    weight: 2,
+    opacity: 1,
+    fillOpacity: 0.85
+  }).addTo(gpsTrackLayer);
+
+  if (trackingFirstFix) {
+    trackingFirstFix = false;
+    const fab = document.getElementById('fabTrack');
+    fab.classList.remove('searching');
+    fab.classList.add('tracking');
+    fab.innerHTML = '<i class="fas fa-stop"></i>';
+    fab.title = 'Tracking stoppen';
+    map.setView([lat, lng], 16);
+    marker.bindPopup('Tracking aktiv').openPopup();
+  }
+
+  try {
+    await revealFogAtPoint(lat, lng);
+  } catch (e) {
+    console.error('Fehler beim Fog-Reveal:', e);
+  }
+}
+
+function onTrackingError(err) {
+  const msg = err.message || err.error?.message || String(err);
+  if (msg.includes('denied') || msg.includes('permission')) {
+    alert('GPS-Zugriff verweigert. Bitte Standortzugriff in den App-Einstellungen erlauben.');
+    stopTracking();
+  } else if (msg.includes('timeout') || msg.includes('TIMEOUT')) {
+    console.warn('GPS sucht noch nach Signal…');
+  } else {
+    console.error('GPS-Fehler:', msg);
+  }
 }
 
 async function revealFogAtPoint(lat, lng) {
-  const circle = turf.buffer(
-    turf.point([lng, lat]),
-    REVEAL_RADIUS,
-    { units: 'kilometers' }
-  );
+  const circle = turf.buffer(turf.point([lng, lat]), REVEAL_RADIUS, { units: 'kilometers' });
   if (!circle) return;
-  
+
   await saveFogPolygon(circle);
   invalidateFogCache();
-  
-  // Aktualisiere Statistiken (15m Radius = ~0.0007 km²)
-  const area = Math.PI * REVEAL_RADIUS * REVEAL_RADIUS;
-  await updateStats(area, 0); // Keine Distanz hinzufügen
-  
   await refreshDisplay();
 }
 
 async function stopTracking() {
   if (!isTracking) return;
-  
   isTracking = false;
-  
-  document.getElementById('fabTrack').classList.remove('tracking');
+
+  document.getElementById('fabTrack').classList.remove('tracking', 'searching');
   document.getElementById('fabTrack').innerHTML = '<i class="fas fa-map-marker-alt"></i>';
   document.getElementById('fabTrack').title = 'Tracking starten';
-  
+
   gpsTrackLayer.clearLayers();
-  
-  if (watchId) {
-    navigator.geolocation.clearWatch(watchId);
-    watchId = null;
+
+  if (trackingWatcher) {
+    try { trackingWatcher.clear(); } catch (_) {}
+    trackingWatcher = null;
   }
-  
+  trackingFirstFix = true;
+
   if (currentTrack.points.length > 0) {
     const track = {
       id: crypto.randomUUID(),
@@ -1052,13 +1112,25 @@ async function stopTracking() {
         source: 'live'
       }
     };
-    
     await saveTrack(track);
-    await revealFogAlongTrack(track);
+
+    // Union-Fläche berechnen (korrekt, keine Doppelzählung)
+    let unionPolygon = null;
+    for (const pt of track.points) {
+      const circle = turf.buffer(turf.point([pt.lng, pt.lat]), REVEAL_RADIUS, { units: 'kilometers' });
+      if (!circle) continue;
+      if (!unionPolygon) { unionPolygon = circle; continue; }
+      try { const m = turf.union(unionPolygon, circle); if (m) unionPolygon = m; } catch (_) {}
+    }
+    if (unionPolygon) {
+      const area = turf.area(unionPolygon) / 1000000;
+      await updateStats(area, track.metadata.distance / 1000);
+    }
+
     drawTrackOnMap(track);
     await updateUI();
   }
-  
+
   currentTrack = { points: [] };
 }
 window.startTracking = startTracking;
@@ -1135,6 +1207,20 @@ window.toggleTracks = toggleTracks;
 
 // ==================== INITIALISIERUNG ====================
 document.addEventListener('DOMContentLoaded', async () => {
+  // Unbehandelte Promise-Fehler abfangen
+  window.addEventListener('unhandledrejection', (e) => {
+    console.error('Unbehandelter Promise-Fehler:', e.reason?.message || e.reason);
+  });
+
+  // Alte Service-Worker-Caches bereinigen (nach APK-Update)
+  try {
+    const reg = await navigator.serviceWorker?.getRegistration();
+    if (reg?.active) {
+      const keys = await caches.keys();
+      await Promise.all(keys.filter(k => k !== 'osm-tiles').map(k => caches.delete(k)));
+    }
+  } catch (_) {}
+
   try {
     await initDB();
     await initMap();

@@ -29,7 +29,7 @@
       --transition: 0.35s var(--ease-out);
     }
 
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
     body {
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
@@ -38,14 +38,31 @@
       height: 100vh;
       width: 100vw;
       overflow: hidden;
+      touch-action: manipulation;
+      -ms-touch-action: manipulation;
+    }
+
+    button, .header-btn, .fab, .modal-btn, .file-input-label, .sheet-preview {
+      touch-action: manipulation;
+      cursor: pointer;
     }
 
     /* ===== GLASS UTILITY ===== */
     .glass {
-      backdrop-filter: blur(16px) saturate(1.2);
       -webkit-backdrop-filter: blur(16px) saturate(1.2);
+      backdrop-filter: blur(16px) saturate(1.2);
       background: var(--glass-bg);
       border: 1px solid var(--glass-border);
+    }
+
+    @supports not ((-webkit-backdrop-filter: blur(16px)) or (backdrop-filter: blur(16px))) {
+      .glass {
+        background: rgba(22, 33, 62, 0.92);
+      }
+    }
+
+    @media (-webkit-min-device-pixel-ratio: 0) {
+      .glass { will-change: transform; }
     }
 
     /* ===== MAP ===== */
@@ -53,6 +70,14 @@
       position: fixed;
       inset: 0;
       z-index: 0;
+    }
+
+    /* ===== SAFE AREA (Notch phones) ===== */
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
     }
 
     /* ===== HEADER ===== */
@@ -67,7 +92,9 @@
       align-items: center;
       justify-content: space-between;
       padding: 0 16px;
+      padding-top: var(--safe-top);
       border-bottom: none;
+      min-height: 48px;
       animation: fadeSlideDown 0.4s ease 0.1s forwards;
       opacity: 0;
     }
@@ -144,7 +171,7 @@
       animation: popIn 0.4s var(--ease-out) 0.2s forwards;
       opacity: 0;
       transform: scale(0.5);
-      bottom: 88px;
+      bottom: calc(88px + var(--safe-bottom));
       right: 20px;
     }
 
@@ -163,8 +190,14 @@
       animation: pulse-ring 1.5s ease infinite, popIn 0.4s var(--ease-out) 0.2s forwards;
     }
 
+    .fab.searching {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35);
+      animation: pulse-ring 0.8s ease infinite;
+    }
+
     @media (min-width: 768px) {
-      .fab { bottom: 24px; right: 24px; }
+      .fab { bottom: calc(24px + var(--safe-bottom)); right: 24px; }
     }
 
     /* ===== BOTTOM SHEET ===== */
@@ -176,15 +209,14 @@
       z-index: 1000;
       border-radius: var(--radius-lg) var(--radius-lg) 0 0;
       border-bottom: none;
-      transform: translateY(calc(100% - 68px));
-      transition: transform 0.4s var(--ease-out);
-      max-height: 70vh;
-      animation: sheetSlideUp 0.5s ease 0.3s forwards;
-      opacity: 0;
+      max-height: 68px;
+      transition: max-height 0.45s cubic-bezier(0.32, 0.72, 0, 1);
+      overflow: hidden;
+      padding-bottom: var(--safe-bottom);
     }
 
     .bottom-sheet.open {
-      transform: translateY(0);
+      max-height: min(70vh, 600px);
     }
 
     @media (min-width: 768px) {
@@ -278,13 +310,10 @@
     /* Expanded content */
     .sheet-content {
       padding: 0 20px 24px;
+      padding-bottom: calc(24px + var(--safe-bottom));
       max-height: calc(70vh - 68px);
       overflow-y: auto;
-      display: none;
-    }
-
-    .bottom-sheet.open .sheet-content {
-      display: block;
+      -webkit-overflow-scrolling: touch;
     }
 
     .sheet-section {
@@ -445,7 +474,7 @@
         left: 0;
         top: 50%;
         transform: translateY(-50%);
-        z-index: 999;
+        z-index: 1001;
         border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
         border-left: none;
         width: 52px;
@@ -505,11 +534,17 @@
       position: fixed;
       inset: 0;
       z-index: 2000;
-      background: rgba(0, 0, 0, 0.5);
+      background: rgba(0, 0, 0, 0.7);
       backdrop-filter: blur(4px);
       -webkit-backdrop-filter: blur(4px);
       align-items: center;
       justify-content: center;
+    }
+
+    @supports not ((-webkit-backdrop-filter: blur(4px)) or (backdrop-filter: blur(4px))) {
+      .modal-overlay {
+        background: rgba(0, 0, 0, 0.85);
+      }
     }
 
     .modal-overlay.show {
@@ -731,10 +766,10 @@
       <button class="header-btn mobile-only" onclick="toggleSidebar()" title="Statistiken">
         <i class="fas fa-chart-bar"></i>
       </button>
-      <button class="header-btn desktop-only" onclick="showImportModal()" title="Importieren">
+      <button class="header-btn" onclick="showImportModal()" title="Importieren">
         <i class="fas fa-file-import"></i>
       </button>
-      <button class="header-btn desktop-only" onclick="showDBModal()" title="Daten">
+      <button class="header-btn" onclick="showDBModal()" title="Daten">
         <i class="fas fa-database"></i>
       </button>
       <button class="header-btn" onclick="showSettingsModal()" title="Einstellungen">

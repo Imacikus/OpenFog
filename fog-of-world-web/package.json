@@ -9,6 +9,10 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@capacitor/android": "^8.4.2",
+    "@capacitor/cli": "^6.2.1",
+    "@capacitor/core": "^8.4.2",
+    "@capacitor/geolocation": "^8.2.0",
     "@mapbox/togeojson": "^0.16.0",
     "@turf/turf": "^6.5.0",
     "gpx-parse": "^0.10.2",

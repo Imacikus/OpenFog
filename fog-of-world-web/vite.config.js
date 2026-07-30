@@ -35,7 +35,7 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,png,svg}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/{s}\.tile\.openstreetmap\.org\/.*/,
+            urlPattern: /^https:\/\/[a-z]\.tile\.openstreetmap\.org\/.*/,
             handler: 'CacheFirst',
             options: {
               cacheName: 'osm-tiles',
