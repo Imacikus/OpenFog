@@ -70,7 +70,7 @@ Detailed Android prerequisites in `openfog/README.md`.
 
 ```bash
 # 1. Source auf GitHub/GitLab pushen
-git remote add origin https://github.com/DEIN_USER/OpenFog-Online.git
+git remote add origin https://github.com/Imacikus/OpenFog-Online.git
 git push -u origin main
 
 # 2. Metadata-PR auf gitlab.com/fdroid/fdroiddata erstellen
@@ -78,9 +78,9 @@ git push -u origin main
 #    Inhalt:
 #    Categories: - Navigation
 #    License: MIT
-#    WebSite: https://github.com/DEIN_USER/OpenFog-Online
-#    SourceCode: https://github.com/DEIN_USER/OpenFog-Online
-#    IssueTracker: https://github.com/DEIN_USER/OpenFog-Online/issues
+#    WebSite: https://github.com/Imacikus/OpenFog-Online
+#    SourceCode: https://github.com/Imacikus/OpenFog-Online
+#    IssueTracker: https://github.com/Imacikus/OpenFog-Online/issues
 #    AutoUpdateMode: Version
 #    UpdateCheckMode: Tags
 #    CurrentVersion: "1.0"
