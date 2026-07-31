@@ -11,14 +11,17 @@ AutoName: OpenFog
 
 RepoType: git
 Repo: https://github.com/Imacikus/OpenFog
+Binaries: https://github.com/Imacikus/OpenFog/releases/latest/download/OpenFog.apk
 
 Builds:
   - versionName: 1.0.0
     versionCode: 1
-    commit: ac37c2b
+    commit: PLACEHOLDER
     subdir: openfog/android
     gradle:
       - yes
+
+AllowedAPKSigningKeys: hAueMOqdyq9ktrN9x2+Hu0V9hBPHfY+e4R9SKxrKWWQ=
 
 AutoUpdateMode: Version
 UpdateCheckMode: Tags

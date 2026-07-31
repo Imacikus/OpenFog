@@ -1,0 +1,724 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenFog</title>
+  <link rel="manifest" href="/manifest.json">
+  <style>
+    /* ===== THEME ===== */
+    :root {
+      --fog-bg: #1a1a2e;
+      --glass-bg: rgba(22, 33, 62, 0.78);
+      --glass-border: rgba(255, 255, 255, 0.06);
+      --accent: #6c63ff;
+      --accent-glow: rgba(108, 99, 255, 0.35);
+      --danger: #ef4444;
+      --danger-glow: rgba(239, 68, 68, 0.35);
+      --success: #10b981;
+      --text: #e8e8e8;
+      --text-muted: #8888aa;
+      --text-bright: #ffffff;
+      --radius: 12px;
+      --radius-lg: 16px;
+      --shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+      --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
+      --transition: 0.35s var(--ease-out);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: var(--fog-bg);
+      color: var(--text);
+      height: 100vh;
+      width: 100vw;
+      overflow: hidden;
+      touch-action: manipulation;
+      -ms-touch-action: manipulation;
+    }
+
+    button, .header-btn, .fab, .modal-btn, .file-input-label, .sheet-preview {
+      touch-action: manipulation;
+      cursor: pointer;
+    }
+
+    /* ===== GLASS UTILITY ===== */
+    .glass {
+      -webkit-backdrop-filter: blur(16px) saturate(1.2);
+      backdrop-filter: blur(16px) saturate(1.2);
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+    }
+
+    @supports not ((-webkit-backdrop-filter: blur(16px)) or (backdrop-filter: blur(16px))) {
+      .glass {
+        background: rgba(22, 33, 62, 0.92);
+      }
+    }
+
+    @media (-webkit-min-device-pixel-ratio: 0) {
+      .glass { will-change: transform; }
+    }
+
+    /* ===== MAP ===== */
+    #map {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+
+    /* ===== SAFE AREA (Notch phones) ===== */
+    :root {
+      --safe-top: env(safe-area-inset-top, 0px);
+      --safe-bottom: env(safe-area-inset-bottom, 0px);
+      --safe-left: env(safe-area-inset-left, 0px);
+      --safe-right: env(safe-area-inset-right, 0px);
+    }
+
+    /* ===== HEADER ===== */
+    #header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 48px;
+      z-index: 1000;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      padding-top: var(--safe-top);
+      border-bottom: none;
+      min-height: 48px;
+      animation: fadeSlideDown 0.4s ease 0.1s forwards;
+      opacity: 0;
+    }
+
+    #appTitle {
+      font-size: 1rem;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      color: var(--text-bright);
+    }
+
+    #appTitle i {
+      margin-right: 8px;
+      color: var(--accent);
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 4px;
+    }
+
+    .header-btn {
+      width: 36px;
+      height: 36px;
+      border: none;
+      border-radius: var(--radius);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.2s ease;
+    }
+
+    .header-btn:hover {
+      background: rgba(255,255,255,0.08);
+      color: var(--text-bright);
+      transform: translateY(-1px);
+    }
+
+    .header-btn:active {
+      transform: scale(0.92);
+    }
+
+    /* ===== FAB ===== */
+    .fab {
+      position: fixed;
+      z-index: 999;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: none;
+      background: linear-gradient(135deg, var(--accent), #8b5cf6);
+      color: white;
+      font-size: 1.3rem;
+      cursor: pointer;
+      box-shadow: 0 4px 20px var(--accent-glow);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s ease;
+      animation: popIn 0.4s var(--ease-out) 0.2s forwards;
+      opacity: 0;
+      transform: scale(0.5);
+      bottom: calc(76px + var(--safe-bottom));
+      right: 20px;
+    }
+
+    .fab:hover {
+      transform: scale(1.08);
+      box-shadow: 0 6px 28px var(--accent-glow);
+    }
+
+    .fab:active {
+      transform: scale(0.92);
+    }
+
+    .fab.tracking {
+      background: linear-gradient(135deg, var(--danger), #dc2626);
+      box-shadow: 0 4px 20px var(--danger-glow);
+      animation: pulse-ring 1.5s ease infinite, popIn 0.4s var(--ease-out) 0.2s forwards;
+    }
+
+    .fab.searching {
+      background: linear-gradient(135deg, #f59e0b, #d97706);
+      box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35);
+      animation: pulse-ring 0.8s ease infinite;
+    }
+
+    /* ===== PANEL SECTION (shared) ===== */
+    .panel-section {
+      margin-bottom: 20px;
+    }
+
+    .panel-section h3 {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+    }
+
+    .panel-section h3 i {
+      margin-right: 8px;
+      color: var(--accent);
+    }
+
+    .panel-section p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    /* Stat rows */
+    .stat-row {
+      display: flex;
+      justify-content: space-between;
+      padding: 7px 0;
+      font-size: 0.85rem;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+    }
+
+    .stat-row:last-child {
+      border-bottom: none;
+    }
+
+    .stat-row span:first-child {
+      color: var(--text-muted);
+    }
+
+    .stat-row span:last-child {
+      font-weight: 600;
+      color: var(--text-bright);
+    }
+
+    /* Level display */
+    .level-display {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 4px 0;
+    }
+
+    .level-number {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent);
+      line-height: 1;
+    }
+
+    .xp-bar {
+      width: 100%;
+      height: 8px;
+      background: rgba(255,255,255,0.08);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+
+    .xp-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent), #8b5cf6);
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+
+    .xp-text {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    /* ===== ACHIEVEMENTS ===== */
+    .achievements-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .achievement-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px;
+      background: rgba(255,255,255,0.04);
+      border-radius: var(--radius);
+      border-left: 3px solid transparent;
+      transition: all 0.35s ease;
+    }
+
+    .achievement-card.unlocked {
+      border-left-color: var(--accent);
+      background: rgba(108, 99, 255, 0.08);
+    }
+
+    .achievement-card.locked {
+      opacity: 0.4;
+    }
+
+    .achievement-icon {
+      font-size: 1.15rem;
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.06);
+      border-radius: var(--radius);
+      flex-shrink: 0;
+    }
+
+    .achievement-card.unlocked .achievement-icon {
+      background: rgba(108, 99, 255, 0.15);
+      color: var(--accent);
+    }
+
+    .achievement-info h4 {
+      font-size: 0.85rem;
+      color: var(--text-bright);
+      margin-bottom: 2px;
+    }
+
+    .achievement-info p {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
+    .modal-btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .modal-btn:active {
+      transform: scale(0.95);
+    }
+
+    .modal-btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+
+    .modal-btn-primary:hover {
+      background: #7c6fff;
+      box-shadow: 0 2px 12px var(--accent-glow);
+    }
+
+    .modal-btn-secondary {
+      background: rgba(255,255,255,0.06);
+      color: var(--text-muted);
+    }
+
+    .modal-btn-secondary:hover {
+      background: rgba(255,255,255,0.1);
+      color: var(--text-bright);
+    }
+
+    .modal-btn-success {
+      background: var(--success);
+      color: white;
+    }
+
+    .modal-btn-success:hover {
+      box-shadow: 0 2px 12px rgba(16, 185, 129, 0.3);
+    }
+
+    .modal-btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+
+    .modal-btn-danger:hover {
+      background: #f87171;
+      box-shadow: 0 2px 12px var(--danger-glow);
+    }
+
+    .file-input-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 20px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      font-size: 0.85rem;
+      font-weight: 600;
+      background: var(--accent);
+      color: white;
+      transition: all 0.2s ease;
+    }
+
+    .file-input-label:hover {
+      background: #7c6fff;
+      box-shadow: 0 2px 12px var(--accent-glow);
+    }
+
+    .file-input-label:active {
+      transform: scale(0.95);
+    }
+
+    input[type="file"] {
+      display: none;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 16px;
+      flex-wrap: wrap;
+    }
+
+    /* ===== ANIMATIONS ===== */
+    @keyframes fadeSlideDown {
+      from { opacity: 0; transform: translateY(-20px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes popIn {
+      from { opacity: 0; transform: scale(0.5); }
+      to   { opacity: 1; transform: scale(1); }
+    }
+
+    @keyframes pulse-ring {
+      0%   { box-shadow: 0 0 0 0 var(--danger-glow); }
+      70%  { box-shadow: 0 0 0 18px transparent; }
+      100% { box-shadow: 0 0 0 0 transparent; }
+    }
+
+    /* ===== TAB BAR ===== */
+    #tabBar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: calc(56px + var(--safe-bottom));
+      z-index: 1002;
+      display: flex;
+      align-items: center;
+      justify-content: space-around;
+      border-top: 1px solid var(--glass-border);
+      border-bottom: none;
+      padding-bottom: var(--safe-bottom);
+    }
+
+    .tab-btn {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2px;
+      padding: 6px 0;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 0.6rem;
+      cursor: pointer;
+      transition: color 0.2s;
+      -webkit-tap-highlight-color: transparent;
+      touch-action: manipulation;
+    }
+
+    .tab-btn i {
+      font-size: 1.15rem;
+      transition: transform 0.2s;
+    }
+
+    .tab-btn.active {
+      color: var(--accent);
+    }
+
+    .tab-btn.active i {
+      transform: scale(1.1);
+    }
+
+    /* ===== TAB PANELS ===== */
+    .tab-panel {
+      position: fixed;
+      top: 48px;
+      left: 0;
+      right: 0;
+      bottom: calc(56px + var(--safe-bottom));
+      z-index: 500;
+      display: none;
+      overflow: hidden;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    .tab-panel-map {
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    .tab-panel-content {
+      z-index: 1001;
+      -webkit-backdrop-filter: blur(16px) saturate(1.2);
+      backdrop-filter: blur(16px) saturate(1.2);
+      background: rgba(22, 33, 62, 0.94);
+    }
+
+    @supports not ((-webkit-backdrop-filter: blur(16px)) or (backdrop-filter: blur(16px))) {
+      .tab-panel-content {
+        background: rgba(22, 33, 62, 0.98);
+      }
+    }
+
+    .panel-scroll {
+      height: 100%;
+      overflow-y: auto;
+      -webkit-overflow-scrolling: touch;
+      padding: 16px 20px 24px;
+    }
+
+    .panel-scroll::-webkit-scrollbar {
+      width: 4px;
+    }
+
+    .panel-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    .panel-scroll::-webkit-scrollbar-thumb {
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+    }
+
+    /* ===== SETTINGS TOGGLE ===== */
+    .settings-row {
+      margin-bottom: 20px;
+    }
+
+    .settings-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      padding: 12px 0;
+      font-size: 0.9rem;
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+
+    .settings-toggle span i {
+      margin-right: 8px;
+      color: var(--accent);
+    }
+
+    .settings-toggle input[type="checkbox"] {
+      appearance: none;
+      width: 40px;
+      height: 22px;
+      background: rgba(255,255,255,0.15);
+      border-radius: 11px;
+      position: relative;
+      cursor: pointer;
+      transition: 0.2s;
+      flex-shrink: 0;
+    }
+
+    .settings-toggle input[type="checkbox"]::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: white;
+      transition: 0.2s;
+    }
+
+    .settings-toggle input[type="checkbox"]:checked {
+      background: var(--accent);
+    }
+
+    .settings-toggle input[type="checkbox"]:checked::after {
+      left: 20px;
+    }
+
+    /* ===== LEAFLET OVERRIDES ===== */
+    .leaflet-container {
+      background: var(--fog-bg) !important;
+    }
+
+    .leaflet-control-zoom a {
+      background: var(--glass-bg) !important;
+      color: var(--text) !important;
+      border-color: var(--glass-border) !important;
+    }
+
+    .leaflet-control-attribution {
+      background: rgba(0,0,0,0.3) !important;
+      color: var(--text-muted) !important;
+      font-size: 10px !important;
+    }
+
+    .leaflet-control-attribution a {
+      color: var(--text-muted) !important;
+    }
+
+    /* ===== ERROR STATE ===== */
+    #map .map-error {
+      padding: 40px;
+      text-align: center;
+      color: var(--danger);
+    }
+    #map .map-error h2 { font-size: 1.3rem; margin-bottom: 8px; }
+    #map .map-error p { font-size: 0.85rem; }
+    #map .map-error small { font-size: 0.75rem; opacity: 0.6; }
+  </style>
+  <script type="module" crossorigin src="/assets/main-5b504855.js"></script>
+  <link rel="stylesheet" href="/assets/index-79f09601.css">
+<link rel="manifest" href="/manifest.webmanifest"><script id="vite-plugin-pwa:register-sw" src="/registerSW.js"></script></head>
+<body>
+  <!-- Header -->
+  <div id="header" class="glass">
+    <span id="appTitle"><i class="fas fa-globe"></i> OpenFog</span>
+    <div class="header-actions">
+      <button class="header-btn" onclick="locateMe()" title="Standort">
+        <i class="fas fa-crosshairs"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Map -->
+  <div id="map"></div>
+
+  <!-- FAB -->
+  <button id="fabTrack" class="fab" onclick="toggleTracking()" title="Tracking starten">
+    <i class="fas fa-map-marker-alt"></i>
+  </button>
+
+  <!-- Tab Panels -->
+  <!-- Panel: Map (transparent, shows map behind) -->
+  <div id="panelMap" class="tab-panel tab-panel-map active"></div>
+
+  <!-- Panel: Profile -->
+  <div id="panelProfile" class="tab-panel tab-panel-content glass">
+    <div class="panel-scroll">
+      <div class="panel-section">
+        <h3><i class="fas fa-map-marked-alt"></i> Enthüllte Fläche</h3>
+        <div class="stat-row"><span>Fläche</span><span id="profileArea">0 km²</span></div>
+        <div class="stat-row"><span>Prozent der Welt</span><span id="profilePercent">0 %</span></div>
+        <div class="stat-row"><span>Distanz</span><span id="profileDistance">0 km</span></div>
+        <div class="stat-row"><span>Tracks</span><span id="profileTrackCount">0</span></div>
+      </div>
+      <div class="panel-section">
+        <h3><i class="fas fa-level-up-alt"></i> Level</h3>
+        <div class="level-display">
+          <span class="level-number" id="profileLevel">1</span>
+          <div class="xp-bar"><div class="xp-bar-fill" id="profileXpBarFill" style="width:0%"></div></div>
+          <span class="xp-text"><span id="profileXP">0</span>&thinsp;/&thinsp;<span id="profileNextXP">500</span> XP</span>
+        </div>
+      </div>
+      <div class="panel-section">
+        <h3><i class="fas fa-trophy"></i> Erfolge</h3>
+        <div id="profileAchievementsList" class="achievements-list"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Panel: Settings -->
+  <div id="panelSettings" class="tab-panel tab-panel-content glass">
+    <div class="panel-scroll">
+      <div class="settings-row">
+        <label class="settings-toggle">
+          <span><i class="fas fa-route"></i> Tracks anzeigen</span>
+          <input type="checkbox" id="toggleTracks" onchange="toggleTracks()">
+        </label>
+      </div>
+
+      <div class="panel-section">
+        <h3><i class="fas fa-file-import"></i> Track importieren</h3>
+        <p>GPX-, KML- oder KMZ-Datei auswählen</p>
+        <label for="fileInput" class="file-input-label"><i class="fas fa-folder-open"></i> Datei auswählen</label>
+        <input type="file" id="fileInput" accept=".gpx,.kml,.kmz" onchange="handleFileImport(event)">
+      </div>
+
+      <div class="panel-section">
+        <h3><i class="fas fa-database"></i> Daten sichern / wiederherstellen</h3>
+        <div class="modal-actions">
+          <button class="modal-btn modal-btn-primary" onclick="exportDatabase()"><i class="fas fa-download"></i> Export</button>
+          <label class="modal-btn modal-btn-success"><i class="fas fa-upload"></i> Import
+            <input type="file" id="dbFileInput" accept=".json" onchange="importDatabase(event)" style="display:none;">
+          </label>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <h3><i class="fas fa-exclamation-triangle"></i> Daten zurücksetzen</h3>
+        <p style="font-size:0.8rem;color:var(--text-muted);">Nicht rückgängig machbar</p>
+        <div class="modal-actions">
+          <button class="modal-btn modal-btn-danger" onclick="resetAllData()"><i class="fas fa-trash-alt"></i> Alles zurücksetzen</button>
+        </div>
+        <div class="modal-actions">
+          <button class="modal-btn modal-btn-danger" onclick="resetTracksAndStats()"><i class="fas fa-route"></i> Tracks + Statistik</button>
+          <button class="modal-btn modal-btn-danger" onclick="resetFogOnly()"><i class="fas fa-cloud"></i> Nur Nebel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tab Bar -->
+  <div id="tabBar" class="tab-bar glass">
+    <button class="tab-btn active" onclick="switchTab('map')" title="Karte">
+      <i class="fas fa-map"></i>
+      <span>Karte</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('profile')" title="Profil">
+      <i class="fas fa-user"></i>
+      <span>Profil</span>
+    </button>
+    <button class="tab-btn" onclick="switchTab('settings')" title="Einstellungen">
+      <i class="fas fa-cog"></i>
+      <span>Einstellungen</span>
+    </button>
+  </div>
+
+  
+</body>
+</html>
