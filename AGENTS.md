@@ -17,9 +17,13 @@ Run from `fog-of-world-web/`:
 APK full pipeline (from `fog-of-world-web/`):
 ```bash
 npm run build && npx cap sync && cd android && ./gradlew assembleDebug && adb install -r app/build/outputs/apk/debug/app-debug.apk
-cp android/app/build/outputs/apk/debug/app-debug.apk ../../openfog/OpenFog.apk
 ```
-F-Droid builds from `openfog/android/` — gradle only, no `npx cap sync` during CI.
+Release APK for distribution (from `openfog/`): build web app → sync → sign with release key:
+```bash
+cd ../fog-of-world-web && npm run build && cd ../openfog && npx cap sync && cd android && JAVA_HOME=<jdk> ./gradlew assembleRelease
+cp app/build/outputs/apk/release/app-release.apk ../../openfog/OpenFog.apk
+```
+Release signing reads `openfog/android/keystore.properties` (gitignored); no keystore = unsigned build (F-Droid CI case). F-Droid builds from `openfog/android/` — gradle only, no `npx cap sync` during CI.
 
 ## Architecture
 
@@ -54,16 +58,18 @@ F-Droid builds from `openfog/android/` — gradle only, no `npx cap sync` during
 
 - **Two Android projects**:
   - `fog-of-world-web/android/` – **dev build target** (Capacitor 8.x). `npx cap sync` writes here, `./gradlew assembleDebug` builds from here.
-  - `openfog/android/` – **F-Droid build target** (Capacitor 5.x, `@capacitor/android: ^5.7.8`). Gradle-only build, no `npx cap sync` during build. Web assets must be pre-synced and committed.
+  - `openfog/android/` – **F-Droid build target** (Capacitor 5.x, `@capacitor/android: ^5.7.8`). Gradle-only build, no `npx cap sync` during build. Web assets are pre-synced **and committed** (gitignored, so re-sync needs `git add -f openfog/android/app/src/main/assets/`).
 - **Version mismatch**: `fog-of-world-web/package.json` has `@capacitor/cli: ^6.2.1` but `@capacitor/core` + `@capacitor/android: ^8.4.2`. The CLI pin to 6.x is intentional.
 - `openfog/capacitor.config.json` `webDir` points to `../fog-of-world-web/dist`.
 - `minSdkVersion = 23` (required by `@capacitor/geolocation`), in both `android/variables.gradle` files.
 
 ## F-Droid
 
-- F-Droid metadata at `fog-of-world-web/metadata/com.openfog.online.yml`:
-  - Build: `commit: ac37c2b`, `subdir: openfog/android`, gradle build.
-- Fastlane store metadata at `fog-of-world-web/fastlane/metadata/android/en-US/` (title, short_description, full_description).
+- F-Droid metadata at `metadata/com.openfog.online.yml` (repo root):
+  - Build: `commit: 63aec213cd4b9e3b0255e57de04b7943d534b94d`, `subdir: openfog/android`, gradle build. Must be a **full commit hash**, never a tag/branch/short hash.
+  - `Binaries` + `AllowedAPKSigningKeys` verify the signed release APK against the GitHub release (`OpenFog.apk`).
+- Fastlane store metadata at `fastlane/metadata/android/en-US/` (repo root) – title, short_description, full_description. Kept out of the yaml on purpose.
+- `openfog/node_modules/` is **committed** (~1500 files) — `openfog/android/capacitor.settings.gradle` references `../node_modules/@capacitor/android/capacitor`, so the gradle-only F-Droid CI build needs it. Never delete or ignore it.
 - No CDN dependencies, no Google Play Services, no Firebase (`openfog/android/build.gradle` has no `google-services` classpath).
 - All deps FLOSS (MIT / Apache 2.0).
 - `applicationId = com.openfog.online` (all projects).
@@ -73,3 +79,5 @@ F-Droid builds from `openfog/android/` — gradle only, no `npx cap sync` during
 - `REVEAL_RADIUS = 0.015` is in **kilometers** (15m), passed to `turf.buffer()` `{units: 'kilometers'}`.
 - `saveFogPolygon` stores `geometry` object + legacy `coordinates`. Both `updateFogOverlay` and `updateRevealedTrail` handle `Polygon` and `MultiPolygon`.
 - SW cache cleanup on startup deletes all caches except `osm-tiles` after APK update.
+- Release keystore lives at `~/.android/openfog-release.keystore`, config in `openfog/android/keystore.properties` (gitignored). Losing the keystore/passwords makes future updates unsignable — back it up. `AllowedAPKSigningKeys` in the metadata = base64 of SHA-256 of the signer public key (NOT the keytool cert fingerprint); recompute via openssl pipeline if the key rotates.
+- `npx cap sync` regenerates `openfog/android/app/src/main/assets/{public,capacitor.config.json,capacitor.plugins.json}` + `res/xml/config.xml` — all gitignored; commit them with `git add -f` so the F-Droid build ships the current web build.
