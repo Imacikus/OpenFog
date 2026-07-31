@@ -16,7 +16,7 @@ Binaries: https://github.com/Imacikus/OpenFog/releases/latest/download/OpenFog.a
 Builds:
   - versionName: 1.0.0
     versionCode: 1
-    commit: PLACEHOLDER
+    commit: 63aec213cd4b9e3b0255e57de04b7943d534b94d
     subdir: openfog/android
     gradle:
       - yes
