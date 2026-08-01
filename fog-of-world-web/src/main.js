@@ -998,6 +998,9 @@ async function gpsGetPosition(timeout) {
 }
 
 // Versuche Capacitor Geolocation, fallback auf navigator.geolocation
+// WICHTIG: Capacitor v8 defaultet `interval` auf `timeout` (60s bei Tracking) –
+// ohne explizites interval/minimumUpdateInterval kommen Android-Updates nur
+// alle 60s. Für Live-Tracking immer ein kleines interval mitgeben.
 async function gpsStartWatch(opts, onPosition, onError) {
   let cap = false;
   try { cap = !!(window.Capacitor?.isNativePlatform?.()); } catch (_) {}
@@ -1012,12 +1015,19 @@ async function gpsStartWatch(opts, onPosition, onError) {
 
     try {
       const id = await Geolocation.watchPosition(
-        { enableHighAccuracy: opts.highAccuracy || false, timeout: opts.timeout || 30000, enableLocationFallback: true },
+        {
+          enableHighAccuracy: opts.highAccuracy || false,
+          timeout: opts.timeout || 30000,
+          interval: opts.interval ?? opts.timeout ?? 5000,
+          minimumUpdateInterval: opts.minimumUpdateInterval ?? opts.interval ?? 5000,
+          enableLocationFallback: true
+        },
         (pos, err) => {
           if (err) { onError(err); return; }
           onPosition(pos);
         }
       );
+      console.log('[GPS] Watch gestartet (Capacitor)', JSON.stringify({ highAccuracy: !!opts.highAccuracy, interval: opts.interval ?? opts.timeout ?? 5000 }));
       return { clear: () => { try { Geolocation.clearWatch({ id }); } catch (_) {} } };
     } catch (e) {
       console.warn('Capacitor Geolocation fehlgeschlagen, Fallback auf navigator.geolocation:', e);
@@ -1029,8 +1039,9 @@ async function gpsStartWatch(opts, onPosition, onError) {
   const watchId = navigator.geolocation.watchPosition(
     (pos) => onPosition(pos),
     (err) => onError(err),
-    { enableHighAccuracy: opts.highAccuracy || false, timeout: opts.timeout || 30000, maximumAge: 30000 }
+    { enableHighAccuracy: opts.highAccuracy || false, timeout: opts.timeout || 30000, maximumAge: 0 }
   );
+  console.log('[GPS] Watch gestartet (navigator.geolocation)');
   return { clear: () => navigator.geolocation.clearWatch(watchId) };
 }
 
@@ -1067,7 +1078,7 @@ async function locateMe() {
   // 2. Watch für kontinuierliche Aktualisierung
   try {
     myLocationWatcher = await gpsStartWatch(
-      { highAccuracy: true, timeout: 30000 },
+      { highAccuracy: true, timeout: 30000, interval: 3000, minimumUpdateInterval: 3000 },
       (pos) => {
         const { latitude: lat, longitude: lng } = pos.coords;
         if (!myLocationMarker) {
@@ -1111,7 +1122,7 @@ async function startTracking() {
 
   try {
     trackingWatcher = await gpsStartWatch(
-      { highAccuracy: true, timeout: 60000 },
+      { highAccuracy: true, timeout: 60000, interval: 1000, minimumUpdateInterval: 1000 },
       onTrackingLocation,
       onTrackingError
     );
@@ -1129,6 +1140,10 @@ async function onTrackingLocation(pos) {
   const lat = pos.coords.latitude;
   const lng = pos.coords.longitude;
   const accuracy = pos.coords.accuracy || 0;
+
+  const lastPt = currentTrack.points[currentTrack.points.length - 1];
+  const delta = lastPt ? (Date.now() - lastPt.timestamp) : 0;
+  console.log(`[TRACK] Fix lat=${lat.toFixed(5)} lng=${lng.toFixed(5)} acc=${accuracy}m dt=${delta}ms`);
 
   currentTrack.points.push({ lat, lng, timestamp: Date.now(), accuracy });
 

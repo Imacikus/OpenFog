@@ -47,9 +47,11 @@ Release signing reads `openfog/android/keystore.properties` (gitignored); no key
 
 - **One-shot** `gpsGetPosition`: tries `@capacitor/geolocation.getCurrentPosition()` first, falls back to `navigator.geolocation.getCurrentPosition()`.
 - **Continuous** `gpsStartWatch`: tries `Geolocation.watchPosition()` with `enableLocationFallback: true` (critical for devices without Play Services), falls back to `navigator.geolocation.watchPosition()`.
+- **Watch cadence gotcha**: Capacitor 8's `watchPosition` defaults `interval` to `timeout` → without an explicit `interval`, Android delivers fixes only every ~60s (tracking) / 30s (locateMe). `gpsStartWatch` always sets `interval: opts.interval ?? opts.timeout ?? 5000` and `minimumUpdateInterval` the same way; the `navigator` fallback uses `maximumAge: 0`. Callers: `startTracking()` → `{highAccuracy: true, timeout: 60000, interval: 1000}`; `locateMe()` watch → `{highAccuracy: true, timeout: 30000, interval: 3000}`. Verified on-device: fixes at ~1s (`[TRACK] … dt=~990-1000ms`).
+- **Stop latency**: after `clearWatch`, 1-2 queued fixes may still flush (`[TRACK]` logs keep appearing briefly); tracking state is already cleared. `[TRACK]` logs each fix with `dt=…ms`; a `dt=0ms` fix after a tap means a fresh track started (toggle was a stop, not a start).
 - **Blue dot** (`locateMe()`): one-shot → marker + center map, then starts a watch. Second click centers map on marker. Blue dot added via `map.add()` directly, so `stopTracking()` does not clear it.
 - **Tracking** (`startTracking/stopTracking`): separate GPS watch. `onTrackingLocation` saves fog circles via `revealFogAtPoint()` (no live stats update). Fog cache rebuild is **throttled to ~1/sec** (`fogRebuildTimer`) so GPS fixes don't trigger a full DB read + recompute each time. On stop: pending rebuild flushed, union area calculated, stats updated once, `gpsTrackLayer.clearLayers()`.
-- **FAB states**: `searching` (orange spinner) → `tracking` (red pulse). Error recovery resets to default.
+- **FAB states**: `searching` (orange spinner) → `tracking` (red pulse). Error recovery resets to default. **Gotcha**: the base `.fab` uses `animation: popIn … forwards` with `opacity: 0`; any state class that sets its own `animation` (e.g. `searching`'s `pulse-ring`) *replaces* `popIn` and drops the button back to `opacity: 0` (invisible while searching). Both `.fab.tracking` and `.fab.searching` must list `popIn 0.4s … forwards` after the pulse keyframe.
 
 ## Key Conventions
 
