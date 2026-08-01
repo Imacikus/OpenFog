@@ -6,31 +6,77 @@
   <title>OpenFog</title>
   <link rel="manifest" href="/manifest.json">
   <style>
-    /* ===== THEME ===== */
+    /* ===== THEME (Material Design 3) =====
+       Die --md-sys-color-*-Werte werden zur Laufzeit aus dem Seed-Farbton
+       generiert (src/theme.js, @material/material-color-utilities) und als
+       Inline-Styles auf :root gesetzt. Hier stehen Fallbacks (Dark), damit
+       der erste Paint vor JS-Ausführung nicht kaputt ist. */
     :root {
-      --fog-bg: #1a1a2e;
-      --glass-bg: rgba(22, 33, 62, 0.78);
-      --glass-border: rgba(255, 255, 255, 0.06);
-      --accent: #6c63ff;
-      --accent-glow: rgba(108, 99, 255, 0.35);
-      --danger: #ef4444;
-      --danger-glow: rgba(239, 68, 68, 0.35);
-      --success: #10b981;
-      --text: #e8e8e8;
-      --text-muted: #8888aa;
-      --text-bright: #ffffff;
+      --md-sys-color-primary: #8b85ff;
+      --md-sys-color-on-primary: #21145c;
+      --md-sys-color-primary-container: #3f3195;
+      --md-sys-color-on-primary-container: #e5deff;
+      --md-sys-color-secondary: #c8c4e8;
+      --md-sys-color-on-secondary: #302e4a;
+      --md-sys-color-secondary-container: #46446a;
+      --md-sys-color-on-secondary-container: #e4e0ff;
+      --md-sys-color-tertiary: #edb7d9;
+      --md-sys-color-on-tertiary: #4a243d;
+      --md-sys-color-tertiary-container: #643a54;
+      --md-sys-color-on-tertiary-container: #ffd7f0;
+      --md-sys-color-error: #ffb4ab;
+      --md-sys-color-on-error: #690005;
+      --md-sys-color-error-container: #93000a;
+      --md-sys-color-on-error-container: #ffdad6;
+      --md-sys-color-background: #131318;
+      --md-sys-color-on-background: #e5e1e9;
+      --md-sys-color-surface: #131318;
+      --md-sys-color-on-surface: #e5e1e9;
+      --md-sys-color-surface-variant: #48464f;
+      --md-sys-color-on-surface-variant: #c9c5d0;
+      --md-sys-color-surface-container-lowest: #0e0e12;
+      --md-sys-color-surface-container-low: #1b1a20;
+      --md-sys-color-surface-container: #1f1e24;
+      --md-sys-color-surface-container-high: #292831;
+      --md-sys-color-surface-container-highest: #34333d;
+      --md-sys-color-outline: #938f9c;
+      --md-sys-color-outline-variant: #48464f;
+      --md-sys-color-scrim: #000000;
+      --md-sys-color-shadow: #000000;
+
+      /* ===== Semantische Aliase (App-Komponenten) ===== */
+      --accent: var(--md-sys-color-primary);
+      --accent-glow: color-mix(in srgb, var(--md-sys-color-primary) 35%, transparent);
+      --danger: var(--md-sys-color-error);
+      --danger-glow: color-mix(in srgb, var(--md-sys-color-error) 35%, transparent);
+      --success: var(--md-sys-color-tertiary);
+      --text: var(--md-sys-color-on-surface);
+      --text-muted: var(--md-sys-color-on-surface-variant);
+      --text-bright: var(--md-sys-color-on-surface);
+      --glass-bg: var(--md-sys-color-surface-container);
+      --glass-border: var(--md-sys-color-outline-variant);
+      --state-overlay: rgba(255, 255, 255, 0.08);
       --radius: 12px;
       --radius-lg: 16px;
+      --radius-full: 999px;
       --shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
       --ease-out: cubic-bezier(0.32, 0.72, 0, 1);
       --transition: 0.35s var(--ease-out);
+
+      /* Karte & Nebel: dunkle Variante */
+      --map-bg: #131318;
+      --fog-overlay: #0f0f13;
+      --fog-border: rgba(255, 255, 255, 0.04);
+      --track-outline: rgba(255, 255, 255, 0.25);
     }
+
+    /* ===== LIGHT SCHEME (nicht mehr verwendet – App rendert nur Dark) ===== */
 
     * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-      background: var(--fog-bg);
+      font-family: Roboto, -apple-system, BlinkMacSystemFont, 'Segoe UI', Oxygen, Ubuntu, sans-serif;
+      background: var(--md-sys-color-background);
       color: var(--text);
       height: 100vh;
       width: 100vw;
@@ -54,7 +100,7 @@
 
     @supports not ((-webkit-backdrop-filter: blur(16px)) or (backdrop-filter: blur(16px))) {
       .glass {
-        background: rgba(22, 33, 62, 0.92);
+        background: var(--md-sys-color-surface-container);
       }
     }
 
@@ -77,7 +123,7 @@
       --safe-right: env(safe-area-inset-right, 0px);
     }
 
-    /* ===== HEADER ===== */
+    /* ===== HEADER (MD3 Top App Bar) ===== */
     #header {
       position: fixed;
       top: 0;
@@ -90,7 +136,7 @@
       justify-content: space-between;
       padding: 0 16px;
       padding-top: var(--safe-top);
-      border-bottom: none;
+      border: none;
       min-height: 48px;
       animation: fadeSlideDown 0.4s ease 0.1s forwards;
       opacity: 0;
@@ -117,7 +163,7 @@
       width: 36px;
       height: 36px;
       border: none;
-      border-radius: var(--radius);
+      border-radius: 50%;
       background: transparent;
       color: var(--text-muted);
       cursor: pointer;
@@ -129,28 +175,27 @@
     }
 
     .header-btn:hover {
-      background: rgba(255,255,255,0.08);
+      background: var(--state-overlay);
       color: var(--text-bright);
-      transform: translateY(-1px);
     }
 
     .header-btn:active {
       transform: scale(0.92);
     }
 
-    /* ===== FAB ===== */
+    /* ===== FAB (MD3) ===== */
     .fab {
       position: fixed;
       z-index: 999;
       width: 56px;
       height: 56px;
-      border-radius: 50%;
+      border-radius: 16px;
       border: none;
-      background: linear-gradient(135deg, var(--accent), #8b5cf6);
-      color: white;
+      background: var(--md-sys-color-primary-container);
+      color: var(--md-sys-color-on-primary-container);
       font-size: 1.3rem;
       cursor: pointer;
-      box-shadow: 0 4px 20px var(--accent-glow);
+      box-shadow: 0 6px 12px color-mix(in srgb, var(--md-sys-color-shadow) 30%, transparent);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -163,8 +208,8 @@
     }
 
     .fab:hover {
-      transform: scale(1.08);
-      box-shadow: 0 6px 28px var(--accent-glow);
+      box-shadow: 0 6px 16px color-mix(in srgb, var(--md-sys-color-shadow) 40%, transparent);
+      background: color-mix(in srgb, var(--md-sys-color-primary-container) 80%, var(--md-sys-color-primary) 20%);
     }
 
     .fab:active {
@@ -172,14 +217,16 @@
     }
 
     .fab.tracking {
-      background: linear-gradient(135deg, var(--danger), #dc2626);
-      box-shadow: 0 4px 20px var(--danger-glow);
+      background: var(--md-sys-color-error-container);
+      color: var(--md-sys-color-on-error-container);
+      box-shadow: 0 6px 12px color-mix(in srgb, var(--md-sys-color-error) 40%, transparent);
       animation: pulse-ring 1.5s ease infinite, popIn 0.4s var(--ease-out) 0.2s forwards;
     }
 
     .fab.searching {
-      background: linear-gradient(135deg, #f59e0b, #d97706);
-      box-shadow: 0 4px 20px rgba(245, 158, 11, 0.35);
+      background: var(--md-sys-color-secondary-container);
+      color: var(--md-sys-color-on-secondary-container);
+      box-shadow: 0 6px 12px color-mix(in srgb, var(--md-sys-color-secondary) 40%, transparent);
       animation: pulse-ring 0.8s ease infinite, popIn 0.4s var(--ease-out) 0.2s forwards;
     }
 
@@ -211,13 +258,8 @@
     .stat-row {
       display: flex;
       justify-content: space-between;
-      padding: 7px 0;
+      padding: 9px 0;
       font-size: 0.85rem;
-      border-bottom: 1px solid rgba(255,255,255,0.04);
-    }
-
-    .stat-row:last-child {
-      border-bottom: none;
     }
 
     .stat-row span:first-child {
@@ -246,16 +288,16 @@
 
     .xp-bar {
       width: 100%;
-      height: 8px;
-      background: rgba(255,255,255,0.08);
-      border-radius: 4px;
+      height: 4px;
+      background: var(--md-sys-color-surface-container-highest);
+      border-radius: 2px;
       overflow: hidden;
     }
 
     .xp-bar-fill {
       height: 100%;
-      background: linear-gradient(90deg, var(--accent), #8b5cf6);
-      border-radius: 4px;
+      background: var(--accent);
+      border-radius: 2px;
       transition: width 0.5s ease;
     }
 
@@ -264,7 +306,7 @@
       color: var(--text-muted);
     }
 
-    /* ===== ACHIEVEMENTS ===== */
+    /* ===== ACHIEVEMENTS (MD3 Cards) ===== */
     .achievements-list {
       display: flex;
       flex-direction: column;
@@ -276,15 +318,13 @@
       align-items: center;
       gap: 12px;
       padding: 12px;
-      background: rgba(255,255,255,0.04);
-      border-radius: var(--radius);
-      border-left: 3px solid transparent;
+      background: var(--md-sys-color-surface-container-low);
+      border-radius: var(--radius-lg);
       transition: all 0.35s ease;
     }
 
     .achievement-card.unlocked {
-      border-left-color: var(--accent);
-      background: rgba(108, 99, 255, 0.08);
+      background: var(--md-sys-color-secondary-container);
     }
 
     .achievement-card.locked {
@@ -293,19 +333,19 @@
 
     .achievement-icon {
       font-size: 1.15rem;
-      width: 36px;
-      height: 36px;
+      width: 40px;
+      height: 40px;
       display: flex;
       align-items: center;
       justify-content: center;
-      background: rgba(255,255,255,0.06);
-      border-radius: var(--radius);
+      background: var(--md-sys-color-surface-container-highest);
+      border-radius: 50%;
       flex-shrink: 0;
     }
 
     .achievement-card.unlocked .achievement-icon {
-      background: rgba(108, 99, 255, 0.15);
-      color: var(--accent);
+      background: var(--md-sys-color-secondary);
+      color: var(--md-sys-color-on-secondary);
     }
 
     .achievement-info h4 {
@@ -322,14 +362,17 @@
     .modal-btn {
       padding: 10px 20px;
       border: none;
-      border-radius: var(--radius);
+      border-radius: var(--radius-full);
       cursor: pointer;
       font-size: 0.85rem;
       font-weight: 600;
+      letter-spacing: 0.3px;
       transition: all 0.2s ease;
       display: inline-flex;
       align-items: center;
       gap: 6px;
+      position: relative;
+      overflow: hidden;
     }
 
     .modal-btn:active {
@@ -337,41 +380,40 @@
     }
 
     .modal-btn-primary {
-      background: var(--accent);
-      color: white;
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
     }
 
     .modal-btn-primary:hover {
-      background: #7c6fff;
+      background: color-mix(in srgb, var(--md-sys-color-primary) 85%, var(--md-sys-color-on-primary) 15%);
       box-shadow: 0 2px 12px var(--accent-glow);
     }
 
     .modal-btn-secondary {
-      background: rgba(255,255,255,0.06);
-      color: var(--text-muted);
+      background: var(--md-sys-color-secondary-container);
+      color: var(--md-sys-color-on-secondary-container);
     }
 
     .modal-btn-secondary:hover {
-      background: rgba(255,255,255,0.1);
-      color: var(--text-bright);
+      background: color-mix(in srgb, var(--md-sys-color-secondary-container) 85%, var(--md-sys-color-secondary) 15%);
     }
 
     .modal-btn-success {
-      background: var(--success);
-      color: white;
+      background: var(--md-sys-color-tertiary-container);
+      color: var(--md-sys-color-on-tertiary-container);
     }
 
     .modal-btn-success:hover {
-      box-shadow: 0 2px 12px rgba(16, 185, 129, 0.3);
+      box-shadow: 0 2px 12px color-mix(in srgb, var(--md-sys-color-tertiary) 40%, transparent);
     }
 
     .modal-btn-danger {
-      background: var(--danger);
-      color: white;
+      background: var(--md-sys-color-error-container);
+      color: var(--md-sys-color-on-error-container);
     }
 
     .modal-btn-danger:hover {
-      background: #f87171;
+      background: color-mix(in srgb, var(--md-sys-color-error-container) 85%, var(--md-sys-color-error) 15%);
       box-shadow: 0 2px 12px var(--danger-glow);
     }
 
@@ -380,17 +422,18 @@
       align-items: center;
       gap: 6px;
       padding: 10px 20px;
-      border-radius: var(--radius);
+      border-radius: var(--radius-full);
       cursor: pointer;
       font-size: 0.85rem;
       font-weight: 600;
-      background: var(--accent);
-      color: white;
+      letter-spacing: 0.3px;
+      background: var(--md-sys-color-primary);
+      color: var(--md-sys-color-on-primary);
       transition: all 0.2s ease;
     }
 
     .file-input-label:hover {
-      background: #7c6fff;
+      background: color-mix(in srgb, var(--md-sys-color-primary) 85%, var(--md-sys-color-on-primary) 15%);
       box-shadow: 0 2px 12px var(--accent-glow);
     }
 
@@ -404,16 +447,16 @@
 
     .import-progress-bar {
       width: 100%;
-      height: 8px;
-      border-radius: 999px;
-      background: rgba(255, 255, 255, 0.08);
+      height: 4px;
+      border-radius: 2px;
+      background: var(--md-sys-color-surface-container-highest);
       overflow: hidden;
     }
 
     .import-progress-fill {
       width: 0%;
       height: 100%;
-      border-radius: 999px;
+      border-radius: 2px;
       background: var(--accent);
       transition: width 0.25s var(--ease-out);
     }
@@ -453,34 +496,37 @@
       100% { box-shadow: 0 0 0 0 transparent; }
     }
 
-    /* ===== TAB BAR ===== */
+    /* ===== NAVIGATION BAR (MD3) ===== */
     #tabBar {
       position: fixed;
       bottom: 0;
       left: 0;
       right: 0;
-      height: calc(56px + var(--safe-bottom));
+      height: calc(80px + var(--safe-bottom));
       z-index: 1002;
       display: flex;
-      align-items: center;
+      align-items: stretch;
       justify-content: space-around;
-      border-top: 1px solid var(--glass-border);
+      border-top: none;
       border-bottom: none;
       padding-bottom: var(--safe-bottom);
+      background: var(--md-sys-color-surface-container);
     }
 
     .tab-btn {
       flex: 1;
+      position: relative;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 2px;
+      gap: 4px;
       padding: 6px 0;
       border: none;
       background: transparent;
       color: var(--text-muted);
       font-size: 0.6rem;
+      font-weight: 500;
       cursor: pointer;
       transition: color 0.2s;
       -webkit-tap-highlight-color: transparent;
@@ -488,16 +534,36 @@
     }
 
     .tab-btn i {
-      font-size: 1.15rem;
+      font-size: 1.25rem;
       transition: transform 0.2s;
     }
 
     .tab-btn.active {
-      color: var(--accent);
+      color: var(--md-sys-color-on-surface);
+      font-weight: 600;
     }
 
     .tab-btn.active i {
-      transform: scale(1.1);
+      transform: scale(1.05);
+    }
+
+    .tab-btn.active::before {
+      content: '';
+      position: absolute;
+      top: 16.5px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 64px;
+      height: 32px;
+      border-radius: 16px;
+      background: var(--md-sys-color-secondary-container);
+      transition: background 0.2s;
+    }
+
+    .tab-btn.active i,
+    .tab-btn.active span {
+      position: relative;
+      z-index: 1;
     }
 
     /* ===== TAB PANELS ===== */
@@ -506,7 +572,7 @@
       top: 48px;
       left: 0;
       right: 0;
-      bottom: calc(56px + var(--safe-bottom));
+      bottom: calc(80px + var(--safe-bottom));
       z-index: 500;
       display: none;
       overflow: hidden;
@@ -523,15 +589,8 @@
 
     .tab-panel-content {
       z-index: 1001;
-      -webkit-backdrop-filter: blur(16px) saturate(1.2);
-      backdrop-filter: blur(16px) saturate(1.2);
-      background: rgba(22, 33, 62, 0.94);
-    }
-
-    @supports not ((-webkit-backdrop-filter: blur(16px)) or (backdrop-filter: blur(16px))) {
-      .tab-panel-content {
-        background: rgba(22, 33, 62, 0.98);
-      }
+      background: var(--md-sys-color-surface);
+      border: none;
     }
 
     .panel-scroll {
@@ -550,7 +609,7 @@
     }
 
     .panel-scroll::-webkit-scrollbar-thumb {
-      background: rgba(255,255,255,0.1);
+      background: var(--md-sys-color-outline-variant);
       border-radius: 2px;
     }
 
@@ -566,7 +625,6 @@
       cursor: pointer;
       padding: 12px 0;
       font-size: 0.9rem;
-      border-bottom: 1px solid rgba(255,255,255,0.06);
     }
 
     .settings-toggle span i {
@@ -576,10 +634,11 @@
 
     .settings-toggle input[type="checkbox"] {
       appearance: none;
-      width: 40px;
-      height: 22px;
-      background: rgba(255,255,255,0.15);
-      border-radius: 11px;
+      width: 52px;
+      height: 32px;
+      background: var(--md-sys-color-surface-container-highest);
+      border: 2px solid var(--md-sys-color-outline);
+      border-radius: 16px;
       position: relative;
       cursor: pointer;
       transition: 0.2s;
@@ -591,28 +650,31 @@
       position: absolute;
       top: 2px;
       left: 2px;
-      width: 18px;
-      height: 18px;
+      width: 24px;
+      height: 24px;
       border-radius: 50%;
-      background: white;
+      background: var(--md-sys-color-outline);
+      box-shadow: 0 1px 2px var(--md-sys-color-scrim);
       transition: 0.2s;
     }
 
     .settings-toggle input[type="checkbox"]:checked {
-      background: var(--accent);
+      background: var(--md-sys-color-primary);
+      border-color: var(--md-sys-color-primary);
     }
 
     .settings-toggle input[type="checkbox"]:checked::after {
-      left: 20px;
+      left: 22px;
+      background: var(--md-sys-color-on-primary);
     }
 
     /* ===== LEAFLET OVERRIDES ===== */
     .leaflet-container {
-      background: var(--fog-bg) !important;
+      background: var(--map-bg) !important;
     }
 
     .leaflet-control-zoom a {
-      background: var(--glass-bg) !important;
+      background: var(--md-sys-color-surface-container) !important;
       color: var(--text) !important;
       border-color: var(--glass-border) !important;
     }
@@ -732,7 +794,7 @@
   </div>
 
   <!-- Tab Bar -->
-  <div id="tabBar" class="tab-bar glass">
+  <div id="tabBar" class="tab-bar">
     <button class="tab-btn active" onclick="switchTab('map')" title="Karte">
       <i class="fas fa-map"></i>
       <span>Karte</span>

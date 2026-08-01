@@ -2,6 +2,14 @@
 
 **OpenFog** – Single-page vanilla JS app + **Capacitor Android App**. Leaflet map, Turf.js, IndexedDB via `idb`. Source in `src/main.js` + `index.html` (inline CSS). Vite `@` alias maps to `src/`.
 
+## Theme (Material Design 3, Dark only)
+
+- **MD3 via design tokens, not a UI framework**: `src/theme.js` generates the full MD3 color scheme from a seed color (`SEED_COLOR = '#6c63ff'`) using `@material/material-color-utilities` (Apache-2.0, ESM-only — Node's bare `require` fails on its extensionless imports, but Vite resolves them fine). `applyScheme()` writes `--md-sys-color-*` vars onto `:root` inline.
+- **Dark only — no light mode, no theme switcher**. A light scheme was removed because on-device WebView rasterizes the `.glass` panels with a stale dark first-paint texture (`will-change: transform` layer caching), so light panels never repaint correctly. `theme.js` builds a single `SchemeTonalSpot(source, isDark=true)` scheme and sets `data-theme="dark"` once in `initTheme()`.
+- **`index.html` `<style>` defines semantic aliases** (`--accent`, `--text`, `--glass-bg`, `--radius`, …) that reference the `--md-sys-color-*` tokens, plus static dark fallbacks for the first paint before JS runs.
+- **Leaflet/canvas colors read via CSS vars at render time** (no hardcoded hex in JS): fog overlay `--fog-overlay` (dark navy), map bg `--map-bg`, track outline `--track-outline`, blue dot / tracking marker use `--md-sys-color-primary` / `--md-sys-color-error`. `cssVar(name, fallback)` helper reads them. `themechange` (fired once on init) re-applies `fogOverlayLayer.setStyle(makeFogStyle())` + `map.invalidateSize()`.
+- **No CDN, no native Material You** (wallpaper colors would need native bridge in both Android projects). MD3 component *look* (Navigation Bar pill, FAB, filled/tonal buttons, MD3 switch, cards) is pure CSS in `index.html`.
+
 ## Commands
 
 Run from `fog-of-world-web/`:

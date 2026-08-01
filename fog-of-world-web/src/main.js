@@ -7,6 +7,7 @@ import { openDB } from 'idb';
 import * as turf from '@turf/turf';
 import { Geolocation } from '@capacitor/geolocation';
 import JSZip from 'jszip';
+import { initTheme } from './theme';
 
 // ==================== KONSTANTEN ====================
 const WORLD_TOTAL_AREA = 510072000; // km² (Gesamtfläche der Erde)
@@ -229,7 +230,13 @@ let unionCache = null; // { cells: Set, polygon }
 function invalidateFogCache() { cachedCells = null; unionCache = null; }
 
 function makeFogStyle() {
-  return { color: '#1a1a2e', weight: 0, fillColor: '#1a1a2e', fillOpacity: 0.85, interactive: false };
+  const css = getComputedStyle(document.documentElement);
+  const overlay = css.getPropertyValue('--fog-overlay').trim() || '#1a1a2e';
+  return { color: overlay, weight: 0, fillColor: overlay, fillOpacity: 0.85, interactive: false };
+}
+
+function cssVar(name, fallback) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim() || fallback;
 }
 
 function buildFogBounds() {
@@ -416,7 +423,7 @@ function updateRevealedTrail() {
     for (const p of polygons) {
       const g = p.geometry || { type: 'Polygon', coordinates: p.coordinates };
       L.geoJSON({ type: 'Feature', geometry: g, properties: {} }, {
-        style: { fillColor: 'transparent', color: 'rgba(255,255,255,0.25)', weight: 1, fillOpacity: 0 }
+        style: { fillColor: 'transparent', color: cssVar('--track-outline', 'rgba(255,255,255,0.25)'), weight: 1, fillOpacity: 0 }
       }).addTo(fogLayer);
     }
   });
@@ -557,13 +564,14 @@ async function updateStats(newArea, newDistance) {
 
 async function updateTrackCount() {
   const tracks = await db.getAll('tracks');
+  const importedCount = tracks.filter(t => t.metadata?.source !== 'live').length;
   const tx = db.transaction('stats', 'readwrite');
   const store = tx.objectStore('stats');
   
   const stats = await store.get('main');
   await store.put({
     ...stats,
-    trackCount: tracks.length
+    trackCount: importedCount
   });
   
   await tx.done;
@@ -614,7 +622,7 @@ async function checkAchievements() {
           isUnlocked = level.currentLevel >= achievement.condition.target;
           break;
         case 'trackCount':
-          isUnlocked = tracks.length >= achievement.condition.target;
+          isUnlocked = tracks.filter(t => t.metadata?.source !== 'live').length >= achievement.condition.target;
           break;
       }
       
@@ -1064,7 +1072,7 @@ async function locateMe() {
     if (!myLocationMarker) {
       myLocationMarker = L.circleMarker([lat, lng], {
         radius: 8,
-        fillColor: '#3498db',
+        fillColor: cssVar('--md-sys-color-primary', '#3498db'),
         color: '#ffffff',
         weight: 2,
         fillOpacity: 0.9
@@ -1084,7 +1092,7 @@ async function locateMe() {
         if (!myLocationMarker) {
           myLocationMarker = L.circleMarker([lat, lng], {
             radius: 8,
-            fillColor: '#3498db',
+            fillColor: cssVar('--md-sys-color-primary', '#3498db'),
             color: '#ffffff',
             weight: 2,
             fillOpacity: 0.9
@@ -1149,7 +1157,7 @@ async function onTrackingLocation(pos) {
 
   const marker = L.circleMarker([lat, lng], {
     radius: 8,
-    fillColor: '#ef4444',
+    fillColor: cssVar('--md-sys-color-error', '#ef4444'),
     color: '#ffffff',
     weight: 2,
     opacity: 1,
@@ -1339,12 +1347,21 @@ document.addEventListener('DOMContentLoaded', async () => {
   } catch (_) {}
 
   try {
+    initTheme();
     await initDB();
     await initMap();
+
+    document.addEventListener('themechange', () => {
+      if (fogOverlayLayer) {
+        fogOverlayLayer.setStyle(makeFogStyle());
+        if (map) map.invalidateSize();
+      }
+    });
 
     const tracks = await getAllTracks();
     tracks.forEach(track => drawTrackOnMap(track));
 
+    await updateTrackCount();
     await refreshDisplay();
     await updateUI();
 

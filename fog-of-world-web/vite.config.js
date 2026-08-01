@@ -15,8 +15,8 @@ export default defineConfig({
         name: 'OpenFog',
         short_name: 'OpenFog',
         description: 'Enthülle die Weltkarte durch Reisen',
-        theme_color: '#4a90e2',
-        background_color: '#ffffff',
+        theme_color: '#131318',
+        background_color: '#131318',
         display: 'standalone',
         icons: [
           {
