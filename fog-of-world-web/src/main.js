@@ -12,6 +12,7 @@ import { initTheme } from './theme';
 // ==================== KONSTANTEN ====================
 const WORLD_TOTAL_AREA = 510072000; // km² (Gesamtfläche der Erde)
 const REVEAL_RADIUS = 0.015; // 15 Meter in Kilometern
+const MAX_SEGMENT_KM = 0.1; // GPS-Sprünge > 100 m nur als Punkt enthüllen
 const XP_PER_KM2 = 10; // 10 XP pro enthülltem km²
 const XP_PER_LEVEL = 500; // 500 XP pro Level
 
@@ -467,24 +468,22 @@ async function revealFogAlongTrack(track, onProgress) {
   let saved = 0;
   const total = track.points.length;
   
-  for (const point of track.points) {
-    const circle = turf.buffer(
-      turf.point([point.lng, point.lat]),
-      REVEAL_RADIUS,
-      { units: 'kilometers' }
-    );
-    if (!circle) continue;
+  for (let i = 0; i < track.points.length; i++) {
+    const point = track.points[i];
+    const prev = i > 0 ? track.points[i - 1] : null;
+    const shape = buildRevealShape(prev, point);
+    if (!shape) continue;
 
-    await saveFogPolygon(circle);
+    await saveFogPolygon(shape);
     saved++;
 
     if (onProgress) onProgress(saved, total);
 
     if (!unionPolygon) {
-      unionPolygon = circle;
+      unionPolygon = shape;
     } else {
       try {
-        const merged = turf.union(unionPolygon, circle);
+        const merged = turf.union(unionPolygon, shape);
         if (merged) unionPolygon = merged;
       } catch (_) {}
     }
@@ -1176,7 +1175,7 @@ async function onTrackingLocation(pos) {
   }
 
   try {
-    await revealFogAtPoint(lat, lng);
+    await revealFogSegment(lastPt, { lat, lng });
   } catch (e) {
     console.error('Fehler beim Fog-Reveal:', e);
   }
@@ -1196,21 +1195,45 @@ function onTrackingError(err) {
 
 let fogRebuildTimer = null;
 
-async function revealFogAtPoint(lat, lng) {
-  const circle = turf.buffer(turf.point([lng, lat]), REVEAL_RADIUS, { units: 'kilometers' });
-  if (!circle) return;
-
-  await saveFogPolygon(circle);
-
+function scheduleFogRebuild() {
   // Cache-Neuaufbau + Overlay-Update throttlen: nicht bei jedem GPS-Fix die
   // komplette DB auslesen und den Fog neu berechnen, sondern ~1×/s (trailing).
-  if (!fogRebuildTimer) {
-    fogRebuildTimer = setTimeout(async () => {
-      fogRebuildTimer = null;
-      invalidateFogCache();
-      await refreshDisplay();
-    }, 1000);
+  if (fogRebuildTimer) return;
+  fogRebuildTimer = setTimeout(async () => {
+    fogRebuildTimer = null;
+    invalidateFogCache();
+    await refreshDisplay();
+  }, 1000);
+}
+
+// Segment-Shape erzeugen: verbindet zwei Fixes als Band (turf.buffer auf LineString),
+// damit bei hoher Geschwindigkeit keine Lücken zwischen den Fix-Kreisen entstehen.
+// Ohne Vorgänger (erster Fix) oder bei GPS-Sprung (> MAX_SEGMENT_KM) nur Punkt-Kreis.
+function buildRevealShape(prev, current) {
+  if (!prev) {
+    return turf.buffer(turf.point([current.lng, current.lat]), REVEAL_RADIUS, { units: 'kilometers' });
   }
+  const dist = turf.distance(
+    turf.point([prev.lng, prev.lat]),
+    turf.point([current.lng, current.lat]),
+    { units: 'kilometers' }
+  );
+  if (dist > MAX_SEGMENT_KM) {
+    // GPS-Sprung (Signalverlust o.ä.): nur Punkt enthüllen, keine Linie durch ungefahrene Gebiete
+    return turf.buffer(turf.point([current.lng, current.lat]), REVEAL_RADIUS, { units: 'kilometers' });
+  }
+  return turf.buffer(
+    turf.lineString([[prev.lng, prev.lat], [current.lng, current.lat]]),
+    REVEAL_RADIUS,
+    { units: 'kilometers' }
+  );
+}
+
+async function revealFogSegment(prev, current) {
+  const shape = buildRevealShape(prev, current);
+  if (!shape) return;
+  await saveFogPolygon(shape);
+  scheduleFogRebuild();
 }
 
 async function stopTracking() {
@@ -1252,11 +1275,13 @@ async function stopTracking() {
 
     // Union-Fläche berechnen (korrekt, keine Doppelzählung)
     let unionPolygon = null;
-    for (const pt of track.points) {
-      const circle = turf.buffer(turf.point([pt.lng, pt.lat]), REVEAL_RADIUS, { units: 'kilometers' });
-      if (!circle) continue;
-      if (!unionPolygon) { unionPolygon = circle; continue; }
-      try { const m = turf.union(unionPolygon, circle); if (m) unionPolygon = m; } catch (_) {}
+    for (let i = 0; i < track.points.length; i++) {
+      const pt = track.points[i];
+      const prev = i > 0 ? track.points[i - 1] : null;
+      const shape = buildRevealShape(prev, pt);
+      if (!shape) continue;
+      if (!unionPolygon) { unionPolygon = shape; continue; }
+      try { const m = turf.union(unionPolygon, shape); if (m) unionPolygon = m; } catch (_) {}
     }
     if (unionPolygon) {
       const area = turf.area(unionPolygon) / 1000000;
