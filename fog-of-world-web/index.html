@@ -398,6 +398,32 @@
       transform: scale(0.95);
     }
 
+    .import-progress {
+      margin-top: 14px;
+    }
+
+    .import-progress-bar {
+      width: 100%;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.08);
+      overflow: hidden;
+    }
+
+    .import-progress-fill {
+      width: 0%;
+      height: 100%;
+      border-radius: 999px;
+      background: var(--accent);
+      transition: width 0.25s var(--ease-out);
+    }
+
+    .import-progress-label {
+      margin-top: 8px;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+
     input[type="file"] {
       display: none;
     }
@@ -675,6 +701,10 @@
         <p>GPX-, KML- oder KMZ-Datei auswählen</p>
         <label for="fileInput" class="file-input-label"><i class="fas fa-folder-open"></i> Datei auswählen</label>
         <input type="file" id="fileInput" accept=".gpx,.kml,.kmz" onchange="handleFileImport(event)">
+        <div id="importProgress" class="import-progress" style="display:none;">
+          <div class="import-progress-bar"><div id="importProgressFill" class="import-progress-fill"></div></div>
+          <div id="importProgressLabel" class="import-progress-label">Importiere…</div>
+        </div>
       </div>
 
       <div class="panel-section">

@@ -29,7 +29,9 @@ Release signing reads `openfog/android/keystore.properties` (gitignored); no key
 
 - **Entrypoint**: `index.html` → `<script type="module" src="/src/main.js">`
 - **Fog reveal**: `turf.buffer()` each point at `REVEAL_RADIUS=0.015`km (15m) → save each circle to `fogPolygons` store. `turf.union()` only for area calculation (stop/import), never for storage.
-- **Fog overlay**: viewport-bounds minus revealed via `turf.difference()`. Re-renders on `moveend`. Guarded by `fogUpdateGuard`. Grid cell cache (`buildCellCache`) groups + pre-merges nearby polygons.
+- **Fog overlay**: viewport-bounds minus revealed via `turf.difference()`. Re-renders on `moveend` (debounced 300ms). Rendered via **canvas renderer** (`L.canvas()`), not SVG — much faster on zoom/pan. One persistent `fogOverlayLayer` updated in place via `setFogData()` (clearLayers + addData) — never removed, so no flicker. Update coalesced: if a compute is running, the latest request is re-run after completion (`fogUpdateQueued`), not dropped. Visible cells are unioned first, then a single `turf.difference` (vs. O(N) diffs on a growing polygon); result simplified at tolerance scaled to current zoom.
+- **Union is cached** (`unionCache`): the revealed-cell union is zoom-independent — it only changes when new cells enter the viewport. On pan, only *new* cells are unioned in (Divide-and-Conquer `unionAll`), so a plain pan costs only `diff`+`simplify` (~10-60ms on device vs. 200-260ms recomputing). The simplified union (`unionCache.simplified`/`simplifiedZoom`) is cached per zoom level (tolerance scales with zoom, not pan). Both caches reset via `invalidateFogCache()`/`buildCellCache()`. Measured on MI9: far-zoom startup union=164ms (cache build, one-time), subsequent moves union=1-9ms, total 10-60ms.
+- **Grid cell cache** (`buildCellCache`) groups + pre-merges nearby polygons (`turf.union` per grid key, then `turf.simplify`).
 - **5 IndexedDB stores**: `fogPolygons`, `tracks`, `achievements`, `userLevel`, `stats`. Version `1` — no migration.
 - **Level system**: `XP = area_km2 * 10`, `level = floor(XP / 500) + 1`. 8 achievements checked on stats update.
 - **Init** has try-catch: errors shown via visible message inside `#map`. `window.db` and `window.map` exposed as debug globals.
@@ -46,7 +48,7 @@ Release signing reads `openfog/android/keystore.properties` (gitignored); no key
 - **One-shot** `gpsGetPosition`: tries `@capacitor/geolocation.getCurrentPosition()` first, falls back to `navigator.geolocation.getCurrentPosition()`.
 - **Continuous** `gpsStartWatch`: tries `Geolocation.watchPosition()` with `enableLocationFallback: true` (critical for devices without Play Services), falls back to `navigator.geolocation.watchPosition()`.
 - **Blue dot** (`locateMe()`): one-shot → marker + center map, then starts a watch. Second click centers map on marker. Blue dot added via `map.add()` directly, so `stopTracking()` does not clear it.
-- **Tracking** (`startTracking/stopTracking`): separate GPS watch. `onTrackingLocation` saves fog circles via `revealFogAtPoint()` (no live stats update). On stop: union area calculated, stats updated once, `gpsTrackLayer.clearLayers()`.
+- **Tracking** (`startTracking/stopTracking`): separate GPS watch. `onTrackingLocation` saves fog circles via `revealFogAtPoint()` (no live stats update). Fog cache rebuild is **throttled to ~1/sec** (`fogRebuildTimer`) so GPS fixes don't trigger a full DB read + recompute each time. On stop: pending rebuild flushed, union area calculated, stats updated once, `gpsTrackLayer.clearLayers()`.
 - **FAB states**: `searching` (orange spinner) → `tracking` (red pulse). Error recovery resets to default.
 
 ## Key Conventions

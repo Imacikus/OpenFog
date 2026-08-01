@@ -201,6 +201,11 @@ async function initMap() {
   tracksLayer = L.layerGroup(); // erstmal unsichtbar
   gpsTrackLayer = L.layerGroup().addTo(map);
 
+  // Fog-Overlay: einmal erzeugen, danach nur Daten austauschen (kein removeLayer-Flackern).
+  // Canvas-Renderer: große Flächen rendert/transformiert deutlich schneller als SVG, v.a. beim Zoomen.
+  fogRenderer = L.canvas({ padding: 0.3 });
+  fogOverlayLayer = L.geoJSON(null, { ...makeFogStyle(), renderer: fogRenderer }).addTo(map);
+
   // Fog bei Bewegung neu berechnen (debounced, damit schnelles Schwenken nicht blockiert)
   let fogTimer;
   map.on('moveend', () => {
@@ -211,10 +216,17 @@ async function initMap() {
 
 // ==================== FOG OVERLAY ====================
 let fogOverlayLayer = null;
-let fogUpdateGuard = false;
+let fogRenderer = null;
+let fogUpdateQueued = false;
+let fogUpdateRunning = false;
 let cachedCells = null; // Array von { polygon, cellX, cellY } – vereinfachte Grid-Zellen
+// Cache der Vereinigung aller bereits vereinten sichtbaren Zellen. Die Union ist
+// zoom-unabhängig – sie ändert sich nur, wenn neue Zellen in den Ausschnitt kommen.
+// Dadurch kostet reines Schwenken nur noch diff+simplify statt einer kompletten
+// Neu-Vereinigung (225 Zellen ≈ 200ms) bei jedem moveend.
+let unionCache = null; // { cells: Set, polygon }
 
-function invalidateFogCache() { cachedCells = null; }
+function invalidateFogCache() { cachedCells = null; unionCache = null; }
 
 function makeFogStyle() {
   return { color: '#1a1a2e', weight: 0, fillColor: '#1a1a2e', fillOpacity: 0.85, interactive: false };
@@ -222,7 +234,12 @@ function makeFogStyle() {
 
 function buildFogBounds() {
   const b = map.getBounds().pad(1.5);
-  return turf.bboxPolygon([b.getWest(), b.getSouth(), b.getEast(), b.getNorth()]);
+  return turf.bboxPolygon([
+    Math.max(-180, b.getWest()),
+    Math.max(-85, b.getSouth()),
+    Math.min(180, b.getEast()),
+    Math.min(85, b.getNorth())
+  ]);
 }
 
 function geoToTurf(p) {
@@ -232,7 +249,7 @@ function geoToTurf(p) {
 
 async function buildCellCache() {
   const polygons = await db.getAll('fogPolygons');
-  if (polygons.length === 0) { cachedCells = []; return; }
+  if (polygons.length === 0) { cachedCells = []; unionCache = null; return; }
 
   const grid = new Map();
   for (const p of polygons) {
@@ -245,6 +262,7 @@ async function buildCellCache() {
   }
 
   cachedCells = [];
+  unionCache = null;
   for (const [, group] of grid) {
     let merged = null;
     for (const poly of group) {
@@ -264,14 +282,26 @@ async function buildCellCache() {
   console.log(`[CACHE] ${polygons.length} → ${cachedCells.length} Zellen`);
 }
 
+function setFogData(geometry) {
+  if (!fogOverlayLayer || !geometry) return;
+  const g = geometry.type === 'Feature' ? geometry.geometry : geometry;
+  if (!g) return;
+  fogOverlayLayer.clearLayers();
+  fogOverlayLayer.addData({ type: 'Feature', geometry: g, properties: {} });
+}
+
 async function updateFogOverlay() {
-  if (!map || fogUpdateGuard) return;
-  fogUpdateGuard = true;
+  if (!map) return;
+
+  // Koaleszierende Guard: läuft bereits eine Berechnung, wird die letzte Anfrage
+  // nach Abschluss nachgeholt – statt stillschweigend verworfen zu werden.
+  if (fogUpdateRunning) {
+    fogUpdateQueued = true;
+    return;
+  }
+  fogUpdateRunning = true;
   const t0 = performance.now();
   try {
-    if (fogOverlayLayer) map.removeLayer(fogOverlayLayer);
-    fogOverlayLayer = null;
-
     if (!cachedCells) await buildCellCache();
 
     const fogRect = buildFogBounds();
@@ -279,30 +309,104 @@ async function updateFogOverlay() {
     const fWest = fc[0][0], fSouth = fc[0][1], fEast = fc[2][0], fNorth = fc[2][1];
 
     if (cachedCells.length === 0) {
-      fogOverlayLayer = L.geoJSON(fogRect, makeFogStyle()).addTo(map);
+      setFogData(fogRect);
       return;
     }
 
-    let currentFog = fogRect;
-    let cellCount = 0;
+    // Sichtbare Zellen zuerst zu EINEM Polygon vereinigen, dann ein einziges
+    // Difference gegen den Kartenausschnitt – statt O(N) Differenzen auf dem
+    // stetig komplexer werdenden Polygon (deutlich schneller bei vielen Zellen).
+    // Union per Divide-and-Conquer: sequentielle Union ist O(N²) auf dem
+    // wachsenden Polygon (225 Zellen ≈ 4s), balancierte Rekursion ist ~17x
+    // schneller (≈240ms), weil jeder Merge nur kleine Teilpolygone betrifft.
+    // Die Union ist zoom-unabhängig und wird cached: Schwenken innerhalb der
+    // bereits gesehenen Region vereinigt nur neue Zellen nach – statt bei jedem
+    // moveend alle sichtbaren Zellen neu zu vereinigen.
+    const tolerance = 360 / (256 * Math.pow(2, map.getZoom())) * 0.5;
+    const tUnion = performance.now();
+    let revealed = unionCache ? unionCache.polygon : null;
+    const visible = [];
+    const freshCells = [];
     for (const cell of cachedCells) {
       if (cell.cellX > fEast || cell.cellX < fWest || cell.cellY > fNorth || cell.cellY < fSouth) continue;
-      if (!turf.booleanIntersects(currentFog, cell.polygon)) continue;
+      if (!turf.booleanIntersects(fogRect, cell.polygon)) continue;
+      visible.push(cell.polygon);
+      if (!unionCache || !unionCache.cells.has(cell)) freshCells.push(cell);
+    }
+
+    // Nur neue Zellen (noch nicht in der Union) nachvereinigen.
+    if (freshCells.length > 0) {
+      function unionAll(list, lo, hi) {
+        const n = hi - lo;
+        if (n <= 0) return null;
+        if (n === 1) return list[lo].polygon;
+        const mid = (lo + hi) >> 1;
+        const a = unionAll(list, lo, mid);
+        const b = unionAll(list, mid, hi);
+        if (!a) return b;
+        if (!b) return a;
+        try {
+          const u = turf.union(a, b);
+          return u || a;
+        } catch (_) { return a; }
+      }
+      const freshUnion = unionAll(freshCells, 0, freshCells.length);
+      if (freshUnion) {
+        try {
+          revealed = revealed ? (turf.union(revealed, freshUnion) || revealed) : freshUnion;
+        } catch (_) {}
+      }
+      if (!unionCache) unionCache = { cells: new Set(), polygon: revealed };
+      for (const cell of freshCells) unionCache.cells.add(cell);
+      unionCache.polygon = revealed;
+      unionCache.simplifiedZoom = null;
+    }
+    const unionMs = (performance.now() - tUnion).toFixed(0);
+
+    // Vereinfachte Union für den Difference-Schritt. Die Union ist zoom-abhängig
+    // (Toleranz skaliert mit Zoom), aber pan-unabhängig – daher nur neu berechnen,
+    // wenn sich der Zoom ändert oder neue Zellen dazukamen.
+    const zoom = map.getZoom();
+    if (unionCache && unionCache.simplified && unionCache.simplifiedZoom === zoom) {
+      revealed = unionCache.simplified;
+    } else if (revealed) {
       try {
-        const diff = turf.difference(currentFog, cell.polygon);
-        if (diff) { currentFog = diff; cellCount++; }
+        const s = turf.simplify(revealed, { tolerance, highQuality: false });
+        if (s) { revealed = s; if (unionCache) { unionCache.simplified = s; unionCache.simplifiedZoom = zoom; } }
       } catch (_) {}
     }
 
-    const elapsed = (performance.now() - t0).toFixed(1);
-    console.log(`[FOG] ${cachedCells.length} Zellen, ${cellCount} diffs (${elapsed}ms)`);
+    const tDiff = performance.now();
+    let currentFog = fogRect;
+    if (revealed) {
+      try {
+        const diff = turf.difference(fogRect, revealed);
+        if (diff) currentFog = diff;
+      } catch (_) {}
+    }
+    const diffMs = (performance.now() - tDiff).toFixed(0);
 
-    fogOverlayLayer = L.geoJSON(currentFog, makeFogStyle()).addTo(map);
+    // Endergebnis vereinfachen: reduziert die Vertex-Anzahl drastisch, was
+    // SVG/Canvas-Rendering und Zoom/Pan-Transformationen spürbar beschleunigt.
+    try {
+      const simplified = turf.simplify(currentFog, { tolerance, highQuality: true });
+      if (simplified) currentFog = simplified;
+    } catch (_) {}
+
+    const elapsed = (performance.now() - t0).toFixed(1);
+    let verts = 0;
+    if (currentFog) verts = currentFog.geometry.coordinates.flat(2).length / 2;
+    console.log(`[FOG] ${cachedCells.length} Zellen, ${visible.length} sichtbar (union=${unionMs}ms diff=${diffMs}ms simplify=${(elapsed - unionMs - diffMs).toFixed(0)}ms total=${elapsed}ms, verts=${verts})`);
+    setFogData(currentFog);
   } catch (e) {
     console.warn('[FOG] Overlay-Fehler:', e);
-    fogOverlayLayer = L.geoJSON(buildFogBounds(), makeFogStyle()).addTo(map);
+    setFogData(buildFogBounds());
   } finally {
-    fogUpdateGuard = false;
+    fogUpdateRunning = false;
+    if (fogUpdateQueued) {
+      fogUpdateQueued = false;
+      updateFogOverlay();
+    }
   }
 }
 
@@ -351,9 +455,10 @@ async function getAllTracks() {
 }
 
 // ==================== NEBEL-ENTHÜLLUNG ====================
-async function revealFogAlongTrack(track) {
+async function revealFogAlongTrack(track, onProgress) {
   let unionPolygon = null;
   let saved = 0;
+  const total = track.points.length;
   
   for (const point of track.points) {
     const circle = turf.buffer(
@@ -365,6 +470,8 @@ async function revealFogAlongTrack(track) {
 
     await saveFogPolygon(circle);
     saved++;
+
+    if (onProgress) onProgress(saved, total);
 
     if (!unionPolygon) {
       unionPolygon = circle;
@@ -603,12 +710,36 @@ function toggleTracking() {
 window.toggleTracking = toggleTracking;
 
 // ==================== GPX/KML-IMPORT ====================
+function showImportProgress(label) {
+  const container = document.getElementById('importProgress');
+  if (!container) return;
+  container.style.display = 'block';
+  setImportProgress(0);
+  const labelEl = document.getElementById('importProgressLabel');
+  if (labelEl) labelEl.textContent = label || 'Importiere…';
+}
+
+function setImportProgress(pct, label) {
+  const fill = document.getElementById('importProgressFill');
+  if (fill) fill.style.width = `${Math.max(0, Math.min(100, pct))}%`;
+  const labelEl = document.getElementById('importProgressLabel');
+  if (labelEl && label) labelEl.textContent = label;
+}
+
+function hideImportProgress() {
+  const container = document.getElementById('importProgress');
+  if (!container) return;
+  container.style.display = 'none';
+  setImportProgress(0);
+}
+
 async function handleFileImport(event) {
   const file = event.target.files[0];
   if (!file) return;
   
   try {
     let trackData;
+    showImportProgress('Datei wird gelesen…');
     
     if (file.name.endsWith('.kmz')) {
       trackData = await parseKMZFile(file);
@@ -618,6 +749,7 @@ async function handleFileImport(event) {
         ? await parseGPXFile(content)
         : await parseKMLFile(content);
     } else {
+      hideImportProgress();
       alert('Ununterstütztes Dateiformat. Bitte wähle eine GPX-, KML- oder KMZ-Datei.');
       return;
     }
@@ -625,20 +757,29 @@ async function handleFileImport(event) {
     console.log(`[IMPORT] "${file.name}" gelesen: ${trackData.points.length} Punkte, ${(trackData.metadata.distance / 1000).toFixed(1)} km`);
     
     // Speichere Track
+    setImportProgress(5, 'Track wird gespeichert…');
     await saveTrack(trackData);
     
     // Enthülle Nebel entlang des Tracks
-    await revealFogAlongTrack(trackData);
+    await revealFogAlongTrack(trackData, (done, total) => {
+      const pct = 5 + (done / total) * 85;
+      setImportProgress(pct, `Nebel wird enthüllt… ${done}/${total}`);
+    });
     
     // Zeichne Track auf der Karte
+    setImportProgress(93, 'Karte wird aktualisiert…');
     drawTrackOnMap(trackData);
     
     // Aktualisiere UI
     await updateUI();
     
+    setImportProgress(100, 'Fertig!');
+    await new Promise(r => setTimeout(r, 300));
+    hideImportProgress();
     alert(`Track "${trackData.name}" erfolgreich importiert!`);
   } catch (error) {
     console.error('Fehler beim Import:', error);
+    hideImportProgress();
     alert('Fehler beim Import: ' + error.message);
   } finally {
     document.getElementById('fileInput').value = '';
@@ -1030,13 +1171,23 @@ function onTrackingError(err) {
   }
 }
 
+let fogRebuildTimer = null;
+
 async function revealFogAtPoint(lat, lng) {
   const circle = turf.buffer(turf.point([lng, lat]), REVEAL_RADIUS, { units: 'kilometers' });
   if (!circle) return;
 
   await saveFogPolygon(circle);
-  invalidateFogCache();
-  await refreshDisplay();
+
+  // Cache-Neuaufbau + Overlay-Update throttlen: nicht bei jedem GPS-Fix die
+  // komplette DB auslesen und den Fog neu berechnen, sondern ~1×/s (trailing).
+  if (!fogRebuildTimer) {
+    fogRebuildTimer = setTimeout(async () => {
+      fogRebuildTimer = null;
+      invalidateFogCache();
+      await refreshDisplay();
+    }, 1000);
+  }
 }
 
 async function stopTracking() {
@@ -1054,6 +1205,11 @@ async function stopTracking() {
     trackingWatcher = null;
   }
   trackingFirstFix = true;
+
+  if (fogRebuildTimer) {
+    clearTimeout(fogRebuildTimer);
+    fogRebuildTimer = null;
+  }
 
   if (currentTrack.points.length > 0) {
     const track = {
@@ -1085,6 +1241,8 @@ async function stopTracking() {
     }
 
     drawTrackOnMap(track);
+    invalidateFogCache();
+    await refreshDisplay();
     await updateUI();
   }
 
