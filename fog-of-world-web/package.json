@@ -1,6 +1,6 @@
 {
   "name": "fog-of-world-web",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "OpenFog - Enthuelle die Weltkarte durch Reisen",
   "type": "module",
   "scripts": {
