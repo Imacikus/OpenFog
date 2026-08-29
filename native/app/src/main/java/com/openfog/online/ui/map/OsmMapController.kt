@@ -25,7 +25,30 @@ import org.osmdroid.views.overlay.Overlay
  * Wraps an osmdroid MapView inside Compose, renders the fog overlay, track
  * polylines, the blue dot, and reports viewport changes to the ViewModel.
  */
+/** ARGB colors driving the map overlays, resolved from the MD3 theme. */
+data class FogColors(
+    val fog: Int,
+    val track: Int,
+    val live: Int,
+    val accent: Int,
+    val border: Int,
+)
+
 class OsmMapController(context: Context) {
+
+    private var colors = FogColors(
+        fog = 0xDD0F0F13.toInt(),
+        track = 0xCC3498DB.toInt(),
+        live = 0xCCE74C3C.toInt(),
+        accent = 0xFF6C63FF.toInt(),
+        border = Color.WHITE,
+    )
+
+    /** Override the hardcoded defaults with theme-derived colors. */
+    fun setColors(c: FogColors) {
+        colors = c
+        mapView.invalidate()
+    }
 
     val mapView: MapView = MapView(context).apply {
         val prefs = context.getSharedPreferences("osmdroid", Context.MODE_PRIVATE)
@@ -44,7 +67,9 @@ class OsmMapController(context: Context) {
 
     fun setListener(onViewport: (west: Double, south: Double, east: Double, north: Double, zoom: Double) -> Unit) {
         mapView.overlays.removeAll { it is ViewportListenerOverlay }
-        mapView.overlays.add(2, ViewportListenerOverlay(mapView, onViewport))
+        // Add at the bottom (index 0): the listener only reports viewport changes
+        // and draws nothing, so it must not throw when the overlay list is empty.
+        mapView.overlays.add(0, ViewportListenerOverlay(mapView, onViewport))
     }
 
     fun setFog(frame: FogFrame?) {
@@ -63,7 +88,7 @@ class OsmMapController(context: Context) {
             polylines.forEach { pts ->
                 val pl = Polyline(mapView).apply {
                     setPoints(pts)
-                    outlinePaint.color = 0xCC3498DB.toInt()
+                    outlinePaint.color = colors.track
                     outlinePaint.strokeWidth = 6f * mapView.context.resources.displayMetrics.density
                 }
                 trackOverlays.add(pl)
@@ -79,7 +104,7 @@ class OsmMapController(context: Context) {
         if (points.size < 2) { liveOverlay = null; mapView.invalidate(); return }
         val pl = Polyline(mapView).apply {
             setPoints(points.map { GeoPoint(it.lat, it.lng) })
-            outlinePaint.color = 0xCCE74C3C.toInt()
+            outlinePaint.color = colors.live
             outlinePaint.strokeWidth = 6f * mapView.context.resources.displayMetrics.density
         }
         liveOverlay = pl
@@ -91,7 +116,7 @@ class OsmMapController(context: Context) {
         val old = blueDot
         if (old != null) mapView.overlays.remove(old)
         if (point == null) { blueDot = null; mapView.invalidate(); return }
-        val overlay = CircleMarkerOverlay(point.lat, point.lng)
+        val overlay = CircleMarkerOverlay(point.lat, point.lng, colors.accent, colors.border)
         blueDot = overlay
         mapView.overlays.add(overlay)
         mapView.invalidate()
@@ -113,7 +138,7 @@ class OsmMapController(context: Context) {
         fun polygon(p: Polygon) {
             val overlay = FogPolygonOverlay()
             overlay.ring = p.exteriorRing.coordinates.map { GeoPoint(it.y, it.x) }.toList()
-            overlay.fillPaint.color = 0xDD0F0F13.toInt()
+            overlay.fillPaint.color = colors.fog
             overlay.fillPaint.style = Paint.Style.FILL
             out.add(overlay)
         }
@@ -129,10 +154,7 @@ class OsmMapController(context: Context) {
     /** osmdroid overlay that draws a filled polygon ring. */
     private class FogPolygonOverlay : Overlay() {
         var ring: List<GeoPoint> = emptyList()
-        val fillPaint = Paint().apply {
-            color = 0xDD0F0F13.toInt()
-            style = Paint.Style.FILL
-        }
+        val fillPaint = Paint().apply { style = Paint.Style.FILL }
 
         override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
             if (shadow) return
@@ -148,13 +170,13 @@ class OsmMapController(context: Context) {
         }
     }
 
-    private class CircleMarkerOverlay(private val lat: Double, private val lng: Double) : Overlay() {
+    private class CircleMarkerOverlay(private val lat: Double, private val lng: Double, color: Int, borderColor: Int) : Overlay() {
         private val paint = Paint().apply {
-            color = 0xFF6C63FF.toInt()
+            this.color = color
             style = Paint.Style.FILL
         }
         private val border = Paint().apply {
-            color = Color.WHITE
+            this.color = borderColor
             style = Paint.Style.STROKE
             strokeWidth = 2f
         }

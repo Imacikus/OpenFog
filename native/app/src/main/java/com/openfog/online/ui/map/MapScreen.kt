@@ -24,6 +24,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -36,6 +38,18 @@ import com.openfog.online.ui.OpenFogViewModel
 fun MapScreen(viewModel: OpenFogViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val controller = remember { OsmMapController(context) }
+
+    val fogColor = MaterialTheme.colorScheme.surface.toArgb()
+    val primaryColor = MaterialTheme.colorScheme.primary.toArgb()
+    val errorColor = MaterialTheme.colorScheme.error.toArgb()
+    val fogColors = FogColors(
+        fog = fogColor,
+        track = primaryColor,
+        live = errorColor,
+        accent = primaryColor,
+        border = Color.White.toArgb(),
+    )
+    LaunchedEffect(fogColors) { controller.setColors(fogColors) }
 
     val fog by viewModel.fog.collectAsStateWithLifecycle()
     val fabState by viewModel.fabState.collectAsStateWithLifecycle()

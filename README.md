@@ -1,10 +1,5 @@
 # OpenFog
 
-> **Hinweis — im Umbau:** OpenFog wird derzeit von der alten Web-App (JS + Leaflet)
-> zu einer **nativen Android-App komplett neu geschrieben** (Kotlin + Jetpack Compose
-> + osmdroid). Fokus liegt aktuell auf dem aktiven `native/` Projekt; der alte Code
-> liegt eingefroren in `archive/`.
-
 **Fog of World** — eine Open-Source-Android-App, die die von dir bereiste Karte
 zurückhält, bis du sie tatsächlich erkundet hast. Je mehr Gebiet du abläufst oder
 abfährst, desto mehr von der Weltkarte wird aufgedeckt.
@@ -17,28 +12,30 @@ abfährst, desto mehr von der Weltkarte wird aufgedeckt.
 
 ```
 OpenFog-Online/
-├── native/   # AKTIVE App: Kotlin + Jetpack Compose + osmdroid (Wird gerade entwickelt)
-├── archive/  # ALTES Projekt, EINGEFROREN (Web-App + F-Droid-Metadaten). Nur Referenz.
+├── native/      # Die aktive Android-App: Kotlin + Jetpack Compose + osmdroid
+├── metadata/    # F-Droid-Metadaten (com.openfog.online.yml)
+├── fastlane/    # F-Droid-/Store-Metadaten (Titel, Beschreibungen)
+├── CHANGELOG.md
 └── LICENSE
 ```
 
-## native/ — die aktive App
+## native/ — die App
 
-Eine vollständig neue native Android-Implementation (Kotlin, Jetpack Compose,
-Material 3, Room, osmdroid). Das ist der aktuelle Entwicklungsstand:
+Eine vollständig native Android-Implementierung (Kotlin, Jetpack Compose,
+Material 3, Room, osmdroid, JTS):
 
 | Bereich | Status |
 |---------|--------|
-| Architektur / Daten (Room, 5 Tabellen) | ✅ geschrieben |
-| Geometrie (JTS + `SphericalMath`) | ✅ geschrieben |
-| Fog-Overlay-Engine (Union + Viewport-Diff) | ✅ geschrieben |
-| GPS (LocationManager) | ✅ geschrieben |
-| Erfolge / Level / Statistik | ✅ geschrieben |
-| Import/Export (GPX/KML/KMZ, Backup) | ✅ geschrieben |
-| Compose-UI (Karte / Profil / Einstellungen) | ✅ geschrieben |
-| Build | ✅ `./gradlew assembleDebug` (BUILD SUCCESSFUL) |
-| On-Device-Smoke-Test (MI9) | ⏳ offen |
-| Unit-Tests (JTS, Parser) | ⏳ offen |
+| Architektur / Daten (Room, 5 Tabellen) | ✅ |
+| Geometrie (JTS + `SphericalMath`) | ✅ |
+| Fog-Overlay-Engine (Union + Viewport-Diff) | ✅ |
+| GPS (LocationManager) | ✅ |
+| Erfolge / Level / Statistik | ✅ |
+| Import/Export (GPX/KML/KMZ, Backup) | ✅ |
+| Compose-UI (Karte / Profil / Einstellungen) | ✅ |
+| Build | ✅ `./gradlew assembleDebug` |
+| Unit-Tests (JTS, Geo) | ✅ `./gradlew testDebugUnitTest` |
+| On-Device-Smoke-Test (MI9) | ✅ |
 
 Version: `2.0.0` (`versionCode 3`). Package / applicationId: `com.openfog.online`.
 
@@ -54,15 +51,21 @@ export ANDROID_HOME=~/Android/Sdk
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
 
-Ausführlichere Hinweise (Tech-Stack, Architektur, offene Punkte) stehen in der
-lokalen `AGENTS.md` (gitignored, nicht im Repo).
+Release-Signing (für F-Droid / Verteilung) liest `native/keystore.properties`
+(gitignored) und signiert mit dem keystore unter `~/.android/openfog-release.keystore`:
 
-## archive/ — das alte Projekt (eingefroren)
+```bash
+./gradlew assembleRelease
+# → app/build/outputs/apk/release/app-release.apk
+```
 
-Der frühere Stand war eine Single-Page Web-App (Vite + vanilla JS + Leaflet +
-Turf.js), verpackt als Capacitor-Android-App, plus F-Droid-Metadaten. Er wurde
-komplett nach `archive/` verschoben und wird **nicht mehr gepflegt** — nur noch
-zur historischen Referenz aufbewahrt.
+### F-Droid
+
+- Metadaten: `metadata/com.openfog.online.yml` (pinnt einen vollen Commit-Hash,
+  `subdir: native/app`, `gradle: yes`). `Binaries` + `AllowedAPKSigningKeys`
+  verifizieren die signierte Release-APK.
+- Bei jedem Release: Version in `build.gradle.kts` erhöhen, `CurrentVersion`/
+  `CurrentVersionCode` in der yml aktualisieren und den Commit-Hash des Builds pinnen.
 
 ## Lizenz
 
