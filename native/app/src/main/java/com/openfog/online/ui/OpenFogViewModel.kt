@@ -18,7 +18,6 @@ import com.openfog.online.model.Track
 import com.openfog.online.model.TrackMetadata
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,6 +41,7 @@ class OpenFogViewModel(private val container: AppContainer) : ViewModel() {
 
     private val fogState = FogState(container.fogEngine)
     private var fogRevision = 0L
+    private var lastViewport: DoubleArray? = null
 
     // ---- Map / fog ----
     private val _fog = MutableStateFlow<FogFrame?>(null)
@@ -60,7 +60,6 @@ class OpenFogViewModel(private val container: AppContainer) : ViewModel() {
     private val _liveDistance = MutableStateFlow(0.0)
     val liveDistance: StateFlow<Double> = _liveDistance.asStateFlow()
     private var trackingJob: Job? = null
-    private var fogRebuildJob: Job? = null
 
     // ---- Blue dot ----
     private val _locateMePoint = MutableStateFlow<GpsPoint?>(null)
@@ -83,7 +82,15 @@ class OpenFogViewModel(private val container: AppContainer) : ViewModel() {
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    // ---- Onboarding / preferences ----
+    private val _showOnboarding = MutableStateFlow<Boolean?>(null)
+    val showOnboarding: StateFlow<Boolean?> = _showOnboarding.asStateFlow()
+    private val _followDuringTracking =
+        MutableStateFlow(container.prefs.followDuringTracking)
+    val followDuringTracking: StateFlow<Boolean> = _followDuringTracking.asStateFlow()
+
     init {
+        _showOnboarding.value = !container.prefs.onboardingShown
         viewModelScope.launch {
             container.progressService.seedIfNeeded()
             refreshStats()
@@ -95,6 +102,7 @@ class OpenFogViewModel(private val container: AppContainer) : ViewModel() {
 
     // ================= VIEWPORT =================
     fun onViewportChanged(west: Double, south: Double, east: Double, north: Double, zoom: Double) {
+        lastViewport = doubleArrayOf(west, south, east, north, zoom)
         viewModelScope.launch(Dispatchers.Default) {
             val geometry = fogState.computeFog(west, south, east, north, zoom)
             _fog.value = FogFrame(geometry, ++fogRevision)
@@ -112,13 +120,20 @@ class OpenFogViewModel(private val container: AppContainer) : ViewModel() {
         _fabState.value = FabState.SEARCHING
         _livePoints.value = emptyList()
         _liveDistance.value = 0.0
-        var first = true
         trackingJob = viewModelScope.launch {
+            // Seed with the last known location so tracking starts instantly and
+            // the map centers, even during a GPS cold start / indoors. Fresh
+            // fixes then refine the position.
+            var hasStarted = false
+            container.locationProvider.lastKnown()?.let {
+                onTrackingFix(it, true)
+                hasStarted = true
+            }
             container.locationProvider.watch(OpenFogConstants.TRACKING_INTERVAL_MS)
                 .catch { onTrackingError(it) }
                 .collect { fix ->
-                    onTrackingFix(fix, first)
-                    first = false
+                    onTrackingFix(fix, !hasStarted)
+                    hasStarted = true
                 }
         }
     }
@@ -134,12 +149,26 @@ class OpenFogViewModel(private val container: AppContainer) : ViewModel() {
         val shape = RevealShapeBuilder.buildRevealPolygon(prevLatLng, curLatLng)
         val areaKm2 = container.fogEngine.areaKm2(shape)
         container.fogRepository.saveRevealShape(shape, areaKm2)
-        scheduleFogRebuild { fogState.addShapes(listOf(shape)) }
+
+        // Apply the reveal shape to the in-memory union immediately (not via a
+        // cancellable throttle that drops it), then refresh the visible fog so
+        // the haze clears along the track in real time.
+        withContext(Dispatchers.Default) {
+            fogState.addShapes(listOf(shape))
+            lastViewport?.let { b ->
+                val geometry = fogState.computeFog(b[0], b[1], b[2], b[3], b[4])
+                _fog.value = FogFrame(geometry, ++fogRevision)
+            }
+        }
 
         if (first) {
             _fabState.value = FabState.TRACKING
             _centerRequest.value = CenterRequest(fix.lat, fix.lng, 16.0)
             _message.value = "Tracking aktiv"
+        } else if (_followDuringTracking.value) {
+            // Follow the user so revealed areas scroll into view while tracking.
+            val zoom = lastViewport?.get(4) ?: 16.0
+            _centerRequest.value = CenterRequest(fix.lat, fix.lng, zoom)
         }
     }
 
@@ -157,7 +186,6 @@ class OpenFogViewModel(private val container: AppContainer) : ViewModel() {
         _fabState.value = FabState.IDLE
         trackingJob?.cancel()
         trackingJob = null
-        flushFogRebuild()
 
         val points = _livePoints.value
         if (points.isNotEmpty()) {
@@ -311,19 +339,6 @@ class OpenFogViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     // ================= INTERNALS =================
-    private fun scheduleFogRebuild(block: () -> Unit) {
-        fogRebuildJob?.cancel()
-        fogRebuildJob = viewModelScope.launch {
-            delay(OpenFogConstants.FOG_REBUILD_THROTTLE_MS)
-            withContext(Dispatchers.Default) { block() }
-        }
-    }
-
-    private fun flushFogRebuild() {
-        fogRebuildJob?.cancel()
-        fogRebuildJob = null
-    }
-
     private suspend fun refreshStats() {
         _stats.value = container.progressService.currentStats()
         _level.value = container.progressService.currentLevel()
@@ -340,4 +355,21 @@ class OpenFogViewModel(private val container: AppContainer) : ViewModel() {
     }
 
     fun consumeMessage(): String? = _message.value
+
+    // ================= ONBOARDING / PREFERENCES =================
+    fun dismissOnboarding() {
+        if (_showOnboarding.value == true) {
+            container.prefs.onboardingShown = true
+        }
+        _showOnboarding.value = false
+    }
+
+    fun openOnboarding() {
+        _showOnboarding.value = true
+    }
+
+    fun setFollowDuringTracking(enabled: Boolean) {
+        container.prefs.followDuringTracking = enabled
+        _followDuringTracking.value = enabled
+    }
 }

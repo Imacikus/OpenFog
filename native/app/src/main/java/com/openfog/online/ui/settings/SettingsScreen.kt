@@ -31,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.openfog.online.ui.OpenFogViewModel
+import com.openfog.online.ui.components.AnimatedEntrance
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -41,6 +42,7 @@ fun SettingsScreen(viewModel: OpenFogViewModel, modifier: Modifier = Modifier) {
     val scope = rememberCoroutineScope()
     val tracksVisible by viewModel.tracksVisible.collectAsStateWithLifecycle()
     val importProgress by viewModel.importProgress.collectAsStateWithLifecycle()
+    val followDuringTracking by viewModel.followDuringTracking.collectAsStateWithLifecycle()
 
     var confirmReset by remember { mutableStateOf<SuspendableAction?>(null) }
 
@@ -121,58 +123,103 @@ fun SettingsScreen(viewModel: OpenFogViewModel, modifier: Modifier = Modifier) {
         }
 
         // Tracks toggle.
-        Card(Modifier.fillMaxWidth()) {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(16.dp),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Column(Modifier.weight(1f)) {
-                    Text("Tracks anzeigen", style = MaterialTheme.typography.titleSmall)
+        AnimatedEntrance(delayMs = 30) {
+            Card(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Tracks anzeigen", style = MaterialTheme.typography.titleSmall)
+                    }
+                    Switch(checked = tracksVisible, onCheckedChange = { viewModel.toggleTracks() })
                 }
-                Switch(checked = tracksVisible, onCheckedChange = { viewModel.toggleTracks() })
+            }
+        }
+
+        // Follow during tracking toggle.
+        AnimatedEntrance(delayMs = 70) {
+            Card(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Karte folgt mir beim Aufzeichnen", style = MaterialTheme.typography.titleSmall)
+                        Text("Zentriert die Karte während der Aufzeichnung auf deine Position.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    Switch(checked = followDuringTracking, onCheckedChange = { viewModel.setFollowDuringTracking(it) })
+                }
+            }
+        }
+
+        // Onboarding re-open.
+        AnimatedEntrance(delayMs = 110) {
+            Card(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Anleitung / Einführung", style = MaterialTheme.typography.titleSmall)
+                        Text("Zeige die Einführung erneut an.", style = MaterialTheme.typography.bodySmall)
+                    }
+                    OutlinedButton(onClick = { viewModel.openOnboarding() }) { Text("Ansehen") }
+                }
             }
         }
 
         // Import track file.
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Track importieren", style = MaterialTheme.typography.titleSmall)
-                Text("GPX, KML oder KMZ-Datei wählen.", style = MaterialTheme.typography.bodySmall)
-                OutlinedButton(onClick = {
-                    fileImportLauncher.launch(arrayOf("application/gpx+xml", "application/vnd.google-earth.kml+xml", "application/vnd.google-earth.kmz", "application/xml", "*/*"))
-                }) { Text("Datei auswählen") }
+        AnimatedEntrance(delayMs = 150) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Track importieren", style = MaterialTheme.typography.titleSmall)
+                    Text("GPX, KML oder KMZ-Datei wählen.", style = MaterialTheme.typography.bodySmall)
+                    OutlinedButton(onClick = {
+                        fileImportLauncher.launch(arrayOf("application/gpx+xml", "application/vnd.google-earth.kml+xml", "application/vnd.google-earth.kmz", "application/xml", "*/*"))
+                    }) { Text("Datei auswählen") }
+                }
             }
         }
 
         // Backup.
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Daten sichern / wiederherstellen", style = MaterialTheme.typography.titleSmall)
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Button(onClick = { exportLauncher.launch("fog-of-world-backup-${System.currentTimeMillis()}.json") }) {
-                        Text("Export")
-                    }
-                    OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
-                        Text("Import")
+        AnimatedEntrance(delayMs = 190) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Daten sichern / wiederherstellen", style = MaterialTheme.typography.titleSmall)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Button(onClick = { exportLauncher.launch("fog-of-world-backup-${System.currentTimeMillis()}.json") }) {
+                            Text("Export")
+                        }
+                        OutlinedButton(onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) }) {
+                            Text("Import")
+                        }
                     }
                 }
             }
         }
 
         // Resets.
-        Card(Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Daten zurücksetzen", style = MaterialTheme.typography.titleSmall)
-                OutlinedButton(onClick = { confirmReset = SuspendableAction("Alles zurücksetzen") { vm -> vm.resetAllData() } }) {
-                    Text("Alles zurücksetzen")
-                }
-                OutlinedButton(onClick = { confirmReset = SuspendableAction("Tracks + Statistik zurücksetzen") { vm -> vm.resetTracksAndStats() } }) {
-                    Text("Tracks + Statistik")
-                }
-                OutlinedButton(onClick = { confirmReset = SuspendableAction("Nur Nebel zurücksetzen") { vm -> vm.resetFogOnly() } }) {
-                    Text("Nur Nebel")
+        AnimatedEntrance(delayMs = 230) {
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Daten zurücksetzen", style = MaterialTheme.typography.titleSmall)
+                    OutlinedButton(onClick = { confirmReset = SuspendableAction("Alles zurücksetzen") { vm -> vm.resetAllData() } }) {
+                        Text("Alles zurücksetzen")
+                    }
+                    OutlinedButton(onClick = { confirmReset = SuspendableAction("Tracks + Statistik zurücksetzen") { vm -> vm.resetTracksAndStats() } }) {
+                        Text("Tracks + Statistik")
+                    }
+                    OutlinedButton(onClick = { confirmReset = SuspendableAction("Nur Nebel zurücksetzen") { vm -> vm.resetFogOnly() } }) {
+                        Text("Nur Nebel")
+                    }
                 }
             }
         }

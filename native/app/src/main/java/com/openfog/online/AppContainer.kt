@@ -2,6 +2,7 @@ package com.openfog.online
 
 import android.content.Context
 import com.openfog.online.achievements.ProgressService
+import com.openfog.online.data.Preferences
 import com.openfog.online.data.db.AppDatabase
 import com.openfog.online.data.repo.FogRepository
 import com.openfog.online.data.repo.TrackRepository
@@ -18,4 +19,5 @@ class AppContainer(context: Context) {
     val progressService = ProgressService(database, trackRepository, fogEngine)
     val locationProvider = LocationProvider(context)
     val backupManager = BackupManager(database)
+    val prefs = Preferences(context)
 }

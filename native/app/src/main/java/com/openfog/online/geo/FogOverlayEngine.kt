@@ -1,14 +1,13 @@
 package com.openfog.online.geo
 
-import org.locationtech.jts.algorithm.distance.DiscreteHausdorffDistance
 import org.locationtech.jts.geom.Coordinate
-import org.locationtech.jts.geom.Envelope
 import org.locationtech.jts.geom.Geometry
 import org.locationtech.jts.geom.GeometryFactory
 import org.locationtech.jts.geom.LinearRing
+import org.locationtech.jts.geom.MultiPolygon
 import org.locationtech.jts.geom.Polygon
-import org.locationtech.jts.index.strtree.STRtree
-import org.locationtech.jts.operation.union.UnaryUnionOp
+import org.locationtech.jts.geom.TopologyException
+import org.locationtech.jts.operation.overlayng.OverlayNGRobust
 import org.locationtech.jts.simplify.DouglasPeuckerSimplifier
 
 /**
@@ -27,33 +26,67 @@ class FogOverlayEngine {
     /**
      * Build the union of many revealed polygons efficiently using a spatial
      * index + unary union (equivalent to the legacy grid-cell union).
+     *
+     * Degenerate shapes (near-coincident edges of consecutive GPS capsules)
+     * can make even the robust union throw a TopologyException; never let that
+     * crash the app — fall back to an unmerged [MultiPolygon], which stays
+     * correct for the viewport diff.
      */
     fun buildRevealedUnion(revealed: List<Geometry>): Geometry? {
-        if (revealed.isEmpty()) return null
-        val tree = STRtree()
-        for (g in revealed) {
-            tree.insert(g.envelopeInternal, g)
-        }
-        val merged = ArrayList<Geometry>()
-        tree.query(Envelope(-180.0, 180.0, -90.0, 90.0))
-            .filterIsInstance<Geometry>()
-            .forEach { merged.add(it) }
-        val union = UnaryUnionOp(merged).union()
-        return if (union.isEmpty) null else union.buffer(0.0)
+        val cleaned = cleanShapes(revealed)
+        if (cleaned.isEmpty()) return null
+        return unionOrMerge(cleaned)
     }
 
     /**
      * Incrementally extend a cached revealed union with newly revealed shapes.
      * Fast path when only a few new segments arrive between viewport refreshes.
+     *
+     * Uses the robust OverlayNG union; falls back to an unmerged representation
+     * if a TopologyException still escapes (see [unionOrMerge]).
      */
     fun extendRevealedUnion(current: Geometry?, newShapes: List<Geometry>): Geometry? {
         if (newShapes.isEmpty()) return current
-        var acc = current
-        for (shape in newShapes) {
-            acc = if (acc == null) shape else acc.union(shape)
-            acc = acc.buffer(0.0)
+        val cleaned = cleanShapes(newShapes)
+        if (current == null) return unionOrMerge(cleaned)
+        val all = ArrayList<Geometry>()
+        all.add(current)
+        all.addAll(cleaned)
+        return unionOrMerge(all)
+    }
+
+    /** Drop empty/invalid/zero-area shapes and snap-clean the rest with buffer(0). */
+    private fun cleanShapes(shapes: List<Geometry>): List<Geometry> {
+        val out = ArrayList<Geometry>()
+        for (g in shapes) {
+            if (g.isEmpty) continue
+            val c = try { g.buffer(0.0) } catch (_: TopologyException) { continue }
+            if (c.isEmpty || c.area <= 0.0) continue
+            out.add(c)
         }
-        return acc
+        return out
+    }
+
+    /**
+     * Robust union with a correctness-preserving fallback: if the union throws,
+     * keep the input as an unmerged [MultiPolygon] so revealed areas stay
+     * revealed instead of crashing.
+     */
+    private fun unionOrMerge(shapes: List<Geometry>): Geometry? {
+        if (shapes.isEmpty()) return null
+        try {
+            val union = OverlayNGRobust.union(shapes)
+            if (union != null && !union.isEmpty) return union.buffer(0.0)
+        } catch (_: TopologyException) {
+            // fall through to unmerged representation
+        } catch (_: RuntimeException) {
+            // fall through to unmerged representation
+        }
+        val polys = shapes.filterIsInstance<Polygon>()
+        if (polys.size == shapes.size) {
+            return factory.createMultiPolygon(polys.toTypedArray())
+        }
+        return factory.createGeometryCollection(shapes.toTypedArray())
     }
 
     /**

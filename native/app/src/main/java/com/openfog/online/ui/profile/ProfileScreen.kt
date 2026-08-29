@@ -31,6 +31,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.openfog.online.data.db.AchievementEntity
 import com.openfog.online.model.OpenFogConstants
 import com.openfog.online.ui.OpenFogViewModel
+import com.openfog.online.ui.components.AnimatedEntrance
 
 @Composable
 fun ProfileScreen(viewModel: OpenFogViewModel, modifier: Modifier = Modifier) {
@@ -48,13 +49,14 @@ fun ProfileScreen(viewModel: OpenFogViewModel, modifier: Modifier = Modifier) {
         Text("Profil", style = MaterialTheme.typography.headlineSmall)
         val s = stats
         val l = level
-        StatCard("Enthüllte Fläche", "${s?.totalRevealedArea?.let { "%.2f km²".format(it) } ?: "0.00 km²"}", Icons.Default.Map)
-        StatCard("der Welt", "${s?.totalRevealedPercent?.let { "%.6f %".format(it) } ?: "0.000000 %"}", Icons.Default.Map)
-        StatCard("Strecke", "${s?.totalDistance?.let { "%.2f km".format(it) } ?: "0.00 km"}", Icons.AutoMirrored.Filled.TrendingUp)
-        StatCard("Tracks", "${s?.trackCount ?: 0}", Icons.Default.Route)
+        AnimatedEntrance(delayMs = 20) { StatCard("Enthüllte Fläche", "${s?.totalRevealedArea?.let { "%.2f km²".format(it) } ?: "0.00 km²"}", Icons.Default.Map) }
+        AnimatedEntrance(delayMs = 60) { StatCard("der Welt", "${s?.totalRevealedPercent?.let { "%.6f %%".format(it) } ?: "0.000000 %"}", Icons.Default.Map) }
+        AnimatedEntrance(delayMs = 100) { StatCard("Strecke", "${s?.totalDistance?.let { "%.2f km".format(it) } ?: "0.00 km"}", Icons.AutoMirrored.Filled.TrendingUp) }
+        AnimatedEntrance(delayMs = 140) { StatCard("Tracks", "${s?.trackCount ?: 0}", Icons.Default.Route) }
 
         // Level + XP bar.
         if (l != null) {
+            AnimatedEntrance(delayMs = 180) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
@@ -72,15 +74,18 @@ fun ProfileScreen(viewModel: OpenFogViewModel, modifier: Modifier = Modifier) {
                     )
                 }
             }
+            }
         }
 
         // Achievements.
+        AnimatedEntrance(delayMs = 220) {
         Text("Erfolge", style = MaterialTheme.typography.titleMedium)
         achievements.forEach { a ->
             AchievementCard(a)
         }
         if (achievements.isEmpty()) {
             Text("Noch keine Erfolge.", style = MaterialTheme.typography.bodyMedium)
+        }
         }
     }
 }

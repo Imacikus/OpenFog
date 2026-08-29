@@ -17,17 +17,20 @@ class FogState(private val engine: FogOverlayEngine) {
      * Initialize from all persisted geometries (full union). Called once at
      * startup and after data resets.
      */
+    @Synchronized
     fun loadFrom(revealed: List<Geometry>) {
         revealedUnion = engine.buildRevealedUnion(revealed)
     }
 
     /** Incrementally extend the cached union with newly revealed shapes. */
+    @Synchronized
     fun addShapes(shapes: List<Geometry>) {
         if (shapes.isEmpty()) return
         revealedUnion = engine.extendRevealedUnion(revealedUnion, shapes)
     }
 
     /** Compute the fog geometry (viewport minus revealed) for the given bounds. */
+    @Synchronized
     fun computeFog(west: Double, south: Double, east: Double, north: Double, zoom: Double): Geometry {
         val padded = engine.padBounds(west, south, east, north, 1.5)
         val rect = engine.boundsRect(padded[0], padded[1], padded[2], padded[3])
@@ -36,6 +39,7 @@ class FogState(private val engine: FogOverlayEngine) {
         return engine.simplify(fog, tol)
     }
 
+    @Synchronized
     fun clear() {
         revealedUnion = null
     }

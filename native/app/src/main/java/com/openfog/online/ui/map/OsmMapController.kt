@@ -55,6 +55,7 @@ class OsmMapController(context: Context) {
         Configuration.getInstance().load(context, prefs)
         setTileSource(TileSourceFactory.MAPNIK)
         setMultiTouchControls(true)
+        setBuiltInZoomControls(false)
         controller.setZoom(OpenFogConstants.DEFAULT_ZOOM)
         controller.setCenter(GeoPoint(OpenFogConstants.DEFAULT_LAT, OpenFogConstants.DEFAULT_LNG))
         isTilesScaledToDpi = true
@@ -77,6 +78,7 @@ class OsmMapController(context: Context) {
         fogOverlays.clear()
         if (frame != null) {
             addGeometry(frame.geometry, fogOverlays)
+            mapView.overlays.addAll(fogOverlays)
         }
         mapView.invalidate()
     }

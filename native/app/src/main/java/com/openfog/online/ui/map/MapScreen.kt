@@ -1,6 +1,22 @@
 package com.openfog.online.ui.map
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
@@ -25,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -39,7 +56,9 @@ fun MapScreen(viewModel: OpenFogViewModel, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val controller = remember { OsmMapController(context) }
 
-    val fogColor = MaterialTheme.colorScheme.surface.toArgb()
+    val fogColor = Color(
+        red = 0.05f, green = 0.05f, blue = 0.08f, alpha = 0.80f
+    ).toArgb()
     val primaryColor = MaterialTheme.colorScheme.primary.toArgb()
     val errorColor = MaterialTheme.colorScheme.error.toArgb()
     val fogColors = FogColors(
@@ -94,12 +113,16 @@ fun MapScreen(viewModel: OpenFogViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        if (fabState == FabState.TRACKING) {
+        AnimatedVisibility(
+            visible = fabState == FabState.TRACKING,
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .statusBarsPadding()
+                .padding(top = 8.dp),
+            enter = fadeIn(tween(200)) + slideInVertically(tween(200)) { -it / 2 },
+            exit = fadeOut(tween(150)) + slideOutVertically(tween(150)) { -it / 2 },
+        ) {
             Surface(
-                modifier = Modifier
-                    .align(Alignment.TopCenter)
-                    .statusBarsPadding()
-                    .padding(top = 8.dp),
                 shape = MaterialTheme.shapes.medium,
                 color = MaterialTheme.colorScheme.surface.copy(alpha = 0.9f),
                 shadowElevation = 4.dp,
@@ -112,25 +135,74 @@ fun MapScreen(viewModel: OpenFogViewModel, modifier: Modifier = Modifier) {
             }
         }
 
-        FloatingActionButton(
+        TrackingFab(
+            fabState = fabState,
             onClick = { viewModel.toggleTracking() },
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .offset(y = (-16).dp),
-            containerColor = when (fabState) {
-                FabState.TRACKING -> MaterialTheme.colorScheme.error
-                FabState.SEARCHING -> MaterialTheme.colorScheme.tertiaryContainer
-                FabState.IDLE -> MaterialTheme.colorScheme.primary
-            },
-            contentColor = when (fabState) {
-                FabState.TRACKING -> MaterialTheme.colorScheme.onError
-                else -> MaterialTheme.colorScheme.onPrimary
-            }
+                .offset(y = (-16).dp)
+        )
+    }
+}
+
+@Composable
+private fun BoxScope.TrackingFab(
+    fabState: FabState,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val containerColor = when (fabState) {
+        FabState.TRACKING -> MaterialTheme.colorScheme.error
+        FabState.SEARCHING -> MaterialTheme.colorScheme.tertiaryContainer
+        FabState.IDLE -> MaterialTheme.colorScheme.primary
+    }
+    val contentColor = when (fabState) {
+        FabState.TRACKING -> MaterialTheme.colorScheme.onError
+        else -> MaterialTheme.colorScheme.onPrimary
+    }
+
+    val infinite = rememberInfiniteTransition(label = "trackingPulse")
+    val pulse by infinite.animateFloat(
+        initialValue = 0.7f,
+        targetValue = 1.15f,
+        animationSpec = infiniteRepeatable(tween(1100), RepeatMode.Reverse),
+        label = "halo"
+    )
+
+    Box(modifier = modifier) {
+        if (fabState == FabState.TRACKING) {
+            Box(
+                Modifier
+                    .align(Alignment.Center)
+                    .size(72.dp)
+                    .graphicsLayer {
+                        scaleX = pulse
+                        scaleY = pulse
+                        alpha = (0.35f - (pulse - 0.7f)) * 0.7f
+                    }
+                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.45f), CircleShape)
+            )
+        }
+        FloatingActionButton(
+            onClick = onClick,
+            containerColor = containerColor,
+            contentColor = contentColor,
+            shape = CircleShape
         ) {
-            when (fabState) {
-                FabState.IDLE -> Text("Aufzeichnen", fontSize = 16.sp)
-                FabState.SEARCHING -> CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp)
-                FabState.TRACKING -> Icon(Icons.Default.Stop, contentDescription = "Stopp")
+            AnimatedContent(
+                targetState = fabState,
+                transitionSpec = {
+                    fadeIn(tween(150)) + slideInVertically(tween(150)) { it / 2 } togetherWith
+                        fadeOut(tween(120)) + slideOutVertically(tween(120)) { -it / 2 }
+                },
+                label = "fabContent"
+            ) { state ->
+                when (state) {
+                    FabState.IDLE -> Text("Aufzeichnen", fontSize = 16.sp)
+                    FabState.SEARCHING ->
+                        CircularProgressIndicator(Modifier.size(28.dp), strokeWidth = 3.dp, color = contentColor)
+                    FabState.TRACKING -> Icon(Icons.Default.Stop, contentDescription = "Stopp")
+                }
             }
         }
     }

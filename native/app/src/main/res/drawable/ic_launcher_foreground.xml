@@ -4,13 +4,31 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <group android:scaleX="0.92" android:scaleY="0.92"
-        android:pivotX="54" android:pivotY="54">
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M54,30 a24,24 0 1,0 0,48 a24,24 0 1,0 0,-48 Z M54,31 a23,23 0 0,0 -23,23 h46 a23,23 0 0,0 -23,-23 Z M32,52 a22,22 0 0,0 22,23 v-23 Z M76,52 h-22 v23 a22,22 0 0,0 22,-23 Z M54,50 a4,4 0 1,0 0,8 a4,4 0 1,0 0,-8 Z" />
-        <path
-            android:fillColor="#FFFFFF"
-            android:pathData="M35,49 a2,2 0 1,0 0,4 a2,2 0 1,0 0,-4 Z M73,49 a2,2 0 1,0 0,4 a2,2 0 1,0 0,-4 Z" />
-    </group>
+
+    <!-- Planet ring (globe outline). -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,26 A28,28 0 1 1 54,82 A28,28 0 1 1 54,26 Z" />
+    <path
+        android:fillColor="#6C63FF"
+        android:pathData="M54,32 A22,22 0 1 1 54,76 A22,22 0 1 1 54,32 Z" />
+
+    <!-- Fog cloud bands across the planet. -->
+    <path
+        android:fillColor="#E6FFFFFF"
+        android:pathData="M35,46 h26 v5 h-26 Z" />
+    <path
+        android:fillColor="#E6FFFFFF"
+        android:pathData="M35,53 h26 v4 h-26 Z" />
+    <path
+        android:fillColor="#E6FFFFFF"
+        android:pathData="M35,59 h26 v5 h-26 Z" />
+
+    <!-- Revealed opening (fog lifted) + location dot. -->
+    <path
+        android:fillColor="#6C63FF"
+        android:pathData="M54,48 A6,6 0 1 1 54,60 A6,6 0 1 1 54,48 Z" />
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M54,51.8 A2.2,2.2 0 1 1 54,56.2 A2.2,2.2 0 1 1 54,51.8 Z" />
 </vector>

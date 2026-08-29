@@ -75,7 +75,7 @@ class LocationProvider(private val context: Context) {
         awaitClose { try { lm.removeUpdates(listener) } catch (_: Exception) {} }
     }
 
-    private fun lastKnown(): GpsPoint? {
+    fun lastKnown(): GpsPoint? {
         val provider = listOf(LocationManager.GPS_PROVIDER, LocationManager.NETWORK_PROVIDER)
             .firstOrNull { lm.isProviderEnabled(it) } ?: return null
         return try {
